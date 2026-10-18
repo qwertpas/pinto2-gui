@@ -1,0 +1,3019 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trajectory Editor — squirrel2</title>
+
+<!-- ── CDN dependencies ───────────────────────────────────────────────── -->
+<script src="js/vendor/chart.umd.min.js"></script>
+<script src="js/vendor/three.min.js"></script>
+
+<style>
+/* ── Reset / base ──────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; font: 13px/1.4 system-ui, sans-serif; background: #1a1a2e; color: #e0e0e0; overflow: hidden; }
+
+/* ── App shell: chart | bottom-row | terminal ───────────────────────────── */
+#app {
+  display: grid;
+  grid-template-rows: 1fr 300px 40px;
+  grid-template-columns: 1fr;
+  height: 100vh;
+  gap: 5px;
+  padding: 5px;
+}
+
+/* ── Shared panel style ─────────────────────────────────────────────────── */
+.panel {
+  background: #16213e;
+  border: 1px solid #2a2a5a;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+/* ── Chart row ──────────────────────────────────────────────────────────── */
+#chart-row {
+  padding: 8px 10px 6px;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+#chart-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+#chart-head-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+#chart-row h2 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #90caf9;
+  letter-spacing: .5px;
+  white-space: nowrap;
+}
+#chart-head-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+#slot-tabs {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.slot-tab {
+  background: #0f1830;
+  color: #7f9bb8;
+  border: 1px solid #2a2a5a;
+  border-radius: 5px;
+  padding: 4px 9px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+.slot-tab.active {
+  background: #2b5a37;
+  color: #e7ffe7;
+  border-color: #4f8a5d;
+}
+#chart-tabs { display: flex; gap: 6px; }
+.chart-tab {
+  background: #10192f;
+  color: #7f9bb8;
+  border: 1px solid #2a2a5a;
+  border-radius: 5px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.chart-tab.active {
+  background: #1f3e65;
+  color: #d6ecff;
+  border-color: #3f6f9c;
+}
+.chart-icon-btn {
+  background: #10192f;
+  color: #9cb6d1;
+  border: 1px solid #2a2a5a;
+  border-radius: 5px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.chart-icon-btn:hover, .chart-tab:hover, .slot-tab:hover { filter: brightness(1.1); }
+.chart-icon-btn:disabled { opacity: 0.4; cursor: default; }
+#ff-scale-controls { display: none; align-items: center; gap: 6px; }
+#ff-scale-controls.active { display: flex; }
+#chart-stack { position: relative; flex: 1; min-height: 0; }
+.chart-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+}
+.chart-canvas.hidden { display: none !important; }
+
+/* ── Bottom row: 3 columns ──────────────────────────────────────────────── */
+#bottom-row {
+  display: grid;
+  grid-template-columns: 260px 280px minmax(0, 1fr);
+  gap: 5px;
+  min-height: 0;
+}
+
+/* ── 3D viewer ──────────────────────────────────────────────────────────── */
+#viewer-panel {
+  display: flex;
+  flex-direction: column;
+}
+#viewer-title {
+  padding: 4px 10px;
+  font-weight: 600;
+  font-size: 11px;
+  color: #90caf9;
+  letter-spacing: .5px;
+  border-bottom: 1px solid #2a2a5a;
+  text-transform: uppercase;
+}
+#viewer3d { flex: 1; min-height: 0; }
+
+/* ── Action panel (buttons + settings) ─────────────────────────────────── */
+#action-panel {
+  padding: 7px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* ── Curves panel ───────────────────────────────────────────────────────── */
+#curves-panel {
+  padding: 6px 8px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow: hidden;
+}
+#curves-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+#curves-main {
+  min-width: 0;
+}
+#imu-panel {
+  min-width: 0;
+  width: auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 118px;
+  gap: 12px;
+  border-left: 1px solid #2a2a5a;
+  padding-left: 12px;
+}
+.imu-main {
+  min-width: 0;
+}
+#imu-panel h3 {
+  font-size: 10px;
+  font-weight: 700;
+  color: #8aa0b5;
+  text-transform: uppercase;
+  letter-spacing: .6px;
+  margin-bottom: 6px;
+}
+.imu-grid {
+  display: grid;
+  grid-template-columns: auto 1fr 1fr 1fr;
+  gap: 4px 8px;
+  align-items: center;
+  font-size: 11px;
+}
+.imu-head {
+  color: #6f86a4;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  text-align: right;
+}
+.imu-label {
+  color: #78909c;
+  text-transform: lowercase;
+}
+.imu-value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: #ffd180;
+  text-align: right;
+}
+.kp-block {
+  min-width: 0;
+  padding-left: 12px;
+  border-left: 1px solid #2a2a5a;
+}
+.kp-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 12px;
+}
+.kd-heading {
+  margin-top: 10px;
+}
+
+/* ── Buttons ────────────────────────────────────────────────────────────── */
+.btn {
+  display: flex; align-items: center; justify-content: center;
+  gap: 5px; padding: 6px 10px; border: none; border-radius: 5px;
+  font-size: 12px; font-weight: 700; cursor: pointer;
+  letter-spacing: .3px; transition: background .12s, filter .1s;
+  width: 100%;
+}
+.btn:active { filter: brightness(.88); }
+.btn-preview  { background: #1b5e20; color: #a5d6a7; border: 1px solid #2e7d32; }
+.btn-run      { background: #0d47a1; color: #90caf9; border: 1px solid #1565c0; }
+.btn-save     { background: #212121; color: #bdbdbd; border: 1px solid #424242; }
+.btn-small    { width: 42px; padding: 7px 0; flex: 0 0 42px; }
+.btn-preview:hover { background: #2e7d32; }
+.btn-run:hover     { background: #1565c0; }
+.btn-save:hover    { background: #333; }
+.btn.previewing   { background: #b71c1c; color: #ffcdd2; border-color: #c62828; }
+.btn-joystick-active { background: #8a3b12; color: #ffe2c7; border: 1px solid #c56a33; }
+.btn-joystick-active:hover { background: #a64917; }
+
+#joystick-status {
+  padding: 4px 8px 2px;
+  border-radius: 5px;
+  background: #10192f;
+  border: 1px solid #2a2a5a;
+  color: #8fb0ce;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.traj-row {
+  display: flex;
+  gap: 5px;
+  width: 100%;
+}
+#savedTrajSelect {
+  flex: 1;
+  min-width: 0;
+  background: #0d1117;
+  color: #e0e0e0;
+  border: 1px solid #333;
+  border-radius: 4px;
+  font-size: 11px;
+  padding: 0 6px;
+}
+
+/* ── Live indicator ─────────────────────────────────────────────────────── */
+#live-indicator {
+  padding: 5px 8px;
+  border-radius: 5px;
+  font-weight: 700;
+  font-size: 11px;
+  text-align: center;
+  background: #1a1a2e;
+  color: #666;
+  border: 1px solid #333;
+  letter-spacing: .3px;
+}
+#live-indicator.armed {
+  background: #b71c1c;
+  color: #ffcdd2;
+  border-color: #c62828;
+  animation: pulse .5s infinite alternate;
+}
+@keyframes pulse { from { opacity:.85 } to { opacity:1 } }
+
+/* ── Settings ───────────────────────────────────────────────────────────── */
+.settings-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 6px;
+  align-items: center;
+  font-size: 11px;
+  color: #9e9e9e;
+}
+.settings-grid input[type=number] {
+  background: #0d1117; color: #e0e0e0;
+  border: 1px solid #333; border-radius: 3px;
+  padding: 2px 5px; font-size: 11px; width: 100%;
+}
+.settings-inline {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  min-width: 0;
+}
+.settings-inline input[type=number] {
+  min-width: 0;
+}
+.settings-action {
+  background: #10192f;
+  color: #d6ecff;
+  border: 1px solid #2a2a5a;
+  border-radius: 3px;
+  padding: 3px 7px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.settings-action:hover { filter: brightness(1.1); }
+.settings-divider {
+  border: none; border-top: 1px solid #2a2a5a; margin: 1px 0;
+}
+
+/* ── Curves table ───────────────────────────────────────────────────────── */
+#curves-table {
+  width: 100%; border-collapse: collapse; font-size: 12px;
+  flex-shrink: 0;
+}
+#curves-table th {
+  font-size: 10px; font-weight: 600; color: #666;
+  text-transform: uppercase; letter-spacing: .5px;
+  padding: 0 6px 4px; border-bottom: 1px solid #2a2a5a;
+  text-align: left;
+}
+#curves-table th.value-head {
+  width: 58px;
+  text-align: right;
+}
+#curves-table td {
+  padding: 3px 6px; white-space: nowrap; vertical-align: middle;
+}
+#curves-table tr.selected td { background: #1a2744; }
+#curves-table tr:hover td    { background: #1e2a4a; cursor: pointer; }
+#curves-table .color-swatch {
+  display: inline-block; width: 24px; height: 10px;
+  border-radius: 3px; vertical-align: middle; margin-right: 3px;
+}
+#curves-table .value-cell {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+#curves-table .value-current {
+  color: #a5d6a7;
+  font-weight: 600;
+}
+#curves-table .value-target {
+  color: #c0cad6;
+}
+#curves-table .value-logged {
+  color: #ffcc80;
+}
+.vis-check { accent-color: #90caf9; }
+
+/* ── Options row ────────────────────────────────────────────────────────── */
+.opts-row {
+  display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+  font-size: 11px; color: #9e9e9e; margin-top: 2px;
+}
+.opts-row label { display: flex; gap: 4px; align-items: center; cursor: pointer; }
+.opts-row input[type=checkbox] { accent-color: #90caf9; }
+
+/* ── Status bar ─────────────────────────────────────────────────────────── */
+#status-bar {
+  display: flex; gap: 14px; align-items: center;
+  font-size: 11px; color: #666;
+  padding-top: 4px; border-top: 1px solid #2a2a5a;
+  margin-top: 2px;
+}
+.status-dot {
+  display: inline-block; width: 8px; height: 8px;
+  border-radius: 50%; background: #333; vertical-align: middle; margin-right: 3px;
+}
+.status-dot.connected { background: #29b6f6; box-shadow: 0 0 4px #29b6f6; }
+.status-dot.voltage   { background: #66bb6a; box-shadow: 0 0 4px #66bb6a; }
+
+/* ── Terminal ───────────────────────────────────────────────────────────── */
+#terminal-row {
+  padding: 4px 8px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+  overflow: hidden;
+}
+#terminal-row label { font-weight: 600; white-space: nowrap; color: #666; }
+#terminal-input {
+  flex: 1; padding: 4px 8px;
+  background: #0d1117; color: #e0e0e0;
+  border: 1px solid #333; border-radius: 4px; font: 12px monospace;
+}
+#terminal-input::placeholder { color: #444; }
+#terminal-output {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  font: 11px/1.3 monospace; color: #78909c; padding: 2px 0;
+  white-space: pre-wrap; word-break: break-all;
+  user-select: text;
+}
+#terminal-send, #btnConnect {
+  padding: 4px 12px; background: #37474f; color: #e0e0e0; border: 1px solid #546e7a;
+  border-radius: 4px; cursor: pointer; font-size: 12px;
+}
+#terminal-send:hover, #btnConnect:hover { background: #455a64; }
+
+#terminal-log-wrap {
+  margin-top: 4px;
+  border-top: 1px solid #2a2a5a;
+  padding-top: 4px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+#terminal-log-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  color: #8aa0b5;
+  margin-bottom: 2px;
+}
+#terminal-log-head label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+#terminal-row #status-bar {
+  margin-left: 6px;
+  padding-top: 0;
+  border-top: none;
+  margin-top: 0;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ── Top: trajectory editor ───────────────────────────────────────── -->
+  <div id="chart-row" class="panel">
+    <div id="chart-head">
+      <div id="chart-head-left">
+        <h2>Trajectory editor</h2>
+        <div id="slot-tabs"></div>
+      </div>
+      <div id="chart-head-right">
+        <div id="chart-tabs">
+          <button class="chart-tab active" id="tabPosition">Position</button>
+          <button class="chart-tab" id="tabFeedforward">Feedforward</button>
+        </div>
+        <div id="ff-scale-controls">
+          <button class="chart-icon-btn" id="btnFfScaleDown">FF -5%</button>
+          <button class="chart-icon-btn" id="btnFfScaleUp">FF +5%</button>
+        </div>
+        <button class="chart-icon-btn" id="btnUndo" title="Undo">Undo</button>
+        <button class="chart-icon-btn" id="btnRedo" title="Redo">Redo</button>
+      </div>
+    </div>
+    <div id="chart-stack">
+      <canvas id="chartCanvas" class="chart-canvas"></canvas>
+      <canvas id="ffChartCanvas" class="chart-canvas hidden"></canvas>
+    </div>
+  </div>
+
+  <!-- ── Middle: 3D viewer | action panel | curves panel ─────────────── -->
+  <div id="bottom-row">
+
+    <!-- 3D viewer -->
+    <div id="viewer-panel" class="panel">
+      <div id="viewer-title">3D Preview</div>
+      <div id="viewer3d"></div>
+    </div>
+
+    <!-- Action panel: buttons + settings -->
+    <div id="action-panel" class="panel">
+      <button class="btn btn-preview" id="btnPreview">&#9654; Preview</button>
+      <button class="btn btn-run"     id="btnRun">&#9654; RUN</button>
+      <button class="btn btn-save"    id="btnJoystickMode">Gamepad OFF</button>
+      <div id="joystick-status">Mode off. Left Y, right X, and right Y integrate shoulder, spine, and hip position.</div>
+      <div id="live-indicator">Hold Option for LIVE</div>
+      <div class="traj-row">
+        <select id="savedTrajSelect"></select>
+        <button class="btn btn-save btn-small" id="btnRefreshTraj">&#8635;</button>
+      </div>
+      <button class="btn btn-save"    id="btnLoadTraj">&#8679; Load Traj (20 KF)</button>
+      <button class="btn btn-save"    id="btnSaveTraj">&#8681; Save Traj</button>
+      <button class="btn btn-save"    id="btnLoadLocalTraj">&#128194; Load CSV File</button>
+      <input type="file" id="inputTrajFile" accept=".csv,text/csv" style="display:none">
+      <button class="btn btn-save"    id="btnSaveLog">&#8681; Save Run CSV</button>
+      <hr class="settings-divider">
+      <div class="settings-grid">
+        <label>Rescale Traj (s)</label>
+        <input type="number" id="inputDuration" value="0.304" step="0.05" min="0.05" max="4">
+        <label>Pad Traj (s)</label>
+        <div class="settings-inline">
+          <input type="number" id="inputPadTime" value="0.100" step="0.05">
+          <button class="settings-action" id="btnPrependTime">Start</button>
+          <button class="settings-action" id="btnAppendTime">End</button>
+        </div>
+        <label>Preview Speed ×</label>
+        <input type="number" id="inputPreviewSpeed" value="0.1" step="0.05" min="0.01" max="2">
+      </div>
+    </div>
+
+    <!-- Curves panel: table + options + status -->
+    <div id="curves-panel" class="panel">
+      <div id="curves-top">
+        <div id="curves-main">
+          <table id="curves-table">
+            <thead>
+              <tr>
+                <th></th>
+                <th>Joint</th>
+                <th class="value-head" id="curvesCurrentHeader">current</th>
+                <th class="value-head" id="curvesTargetHeader">target</th>
+                <th class="value-head" id="curvesLoggedHeader">logged</th>
+              </tr>
+            </thead>
+            <tbody id="curvesBody"></tbody>
+          </table>
+        </div>
+        <div id="imu-panel">
+          <div class="imu-main">
+            <h3>IMU</h3>
+            <div class="imu-grid">
+              <div></div>
+              <div class="imu-head">Current</div>
+              <div class="imu-head">Target</div>
+              <div class="imu-head">Logged</div>
+              <div class="imu-label">grav x</div>
+              <div class="imu-value" id="imuCurGravX">0.00</div>
+              <div class="imu-value" id="imuTgtGravX">0.00</div>
+              <div class="imu-value" id="imuLogGravX">—</div>
+              <div class="imu-label">grav y</div>
+              <div class="imu-value" id="imuCurGravY">0.00</div>
+              <div class="imu-value" id="imuTgtGravY">0.00</div>
+              <div class="imu-value" id="imuLogGravY">—</div>
+              <div class="imu-label">grav z</div>
+              <div class="imu-value" id="imuCurGravZ">-1.00</div>
+              <div class="imu-value" id="imuTgtGravZ">-1.00</div>
+              <div class="imu-value" id="imuLogGravZ">—</div>
+              <div class="imu-label">yaw</div>
+              <div class="imu-value" id="imuCurYaw">0.0°</div>
+              <div class="imu-value" id="imuTgtYaw">0.0°</div>
+              <div class="imu-value" id="imuLogYaw">—</div>
+            </div>
+          </div>
+          <div class="kp-block">
+            <h3>KP</h3>
+            <div class="kp-row"><span class="imu-label">kp-sh</span><span class="imu-value" id="imuKpShoulder">0.00</span></div>
+            <div class="kp-row"><span class="imu-label">kp-sp</span><span class="imu-value" id="imuKpSpine">0.00</span></div>
+            <div class="kp-row"><span class="imu-label">kp-hi</span><span class="imu-value" id="imuKpHip">0.00</span></div>
+            <h3 class="kd-heading">KD</h3>
+            <div class="kp-row"><span class="imu-label">kd-sh</span><span class="imu-value" id="imuKdShoulder">0.00</span></div>
+            <div class="kp-row"><span class="imu-label">kd-sp</span><span class="imu-value" id="imuKdSpine">0.00</span></div>
+            <div class="kp-row"><span class="imu-label">kd-hi</span><span class="imu-value" id="imuKdHip">0.00</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="opts-row" id="positionOptsRow">
+        <label><input type="checkbox" id="chkShowRecorded"> Display recorded</label>
+        <label><input type="checkbox" id="chkImuSnap"> Display current</label>
+        <label><input type="checkbox" id="chkDriveRecorded"> Drive from recorded</label>
+      </div>
+
+      <div id="terminal-log-wrap">
+        <div id="terminal-log-head">
+          <span>Robot log</span>
+          <label><input type="checkbox" id="chkLogAutoscroll" checked> Auto-scroll</label>
+        </div>
+        <div id="terminal-output"></div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- ── Terminal ───────────────────────────────────────────────────────── -->
+  <div id="terminal-row" class="panel">
+    <label>Robot&nbsp;term:</label>
+    <input id="terminal-input" type="text" placeholder="PING  /  STATUS  /  STOP  /  KP SPINE 1  /  KD SPINE 0.1  /  ...">
+    <button id="terminal-send">Send</button>
+    <div id="status-bar">
+      <button id="btnConnect" type="button">Connect USB</button>
+      <span id="connIndicator"><span class="status-dot" id="connDot"></span>Disconnected</span>
+      <span id="voltIndicator"><span class="status-dot voltage"></span>Bus: —</span>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── Scripts ─────────────────────────────────────────────────────────── -->
+<script src="js/trajectory.js"></script>
+<script src="js/chart_editor.js"></script>
+<script src="js/viewer3d.js"></script>
+<script src="js/comms.js"></script>
+<script src="js/files.js"></script>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+const DEFAULT_DURATION = 1.0;
+
+function deepClone(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function zeroFeedforwardKeyframes(duration) {
+  return FeedforwardTrajectoryModel.JOINT_NAMES.map(() => [
+    { t: 0, q: 0 },
+    { t: duration, q: 0 },
+  ]);
+}
+
+function normalizeQuat(quat) {
+  const [w, x, y, z] = Array.isArray(quat) && quat.length === 4 ? quat : [1, 0, 0, 0];
+  const norm = Math.hypot(w, x, y, z);
+  if (!(norm > 1e-9)) return [1, 0, 0, 0];
+  return [w / norm, x / norm, y / norm, z / norm];
+}
+
+function normaliseReferenceImu(referenceImu) {
+  if (!referenceImu?.samples?.length) return null;
+  const samples = referenceImu.samples
+    .map(sample => ({
+      u: Math.max(0, Math.min(1, Number(sample?.u) || 0)),
+      quat: normalizeQuat(sample?.quat),
+    }))
+    .sort((a, b) => a.u - b.u);
+  if (samples.length === 0) return null;
+  samples[0].u = 0;
+  samples[samples.length - 1].u = 1;
+  return { samples };
+}
+
+function normaliseTrajectoryDoc(doc) {
+  if (doc?.positionKeyframes) {
+    const duration = Number(doc.duration) || DEFAULT_DURATION;
+    return {
+      version: 4,
+      duration,
+      positionKeyframes: deepClone(doc.positionKeyframes),
+      feedforwardKeyframesVolts: deepClone(doc.feedforwardKeyframesVolts ?? zeroFeedforwardKeyframes(duration)),
+      referenceImu: normaliseReferenceImu(doc.referenceImu),
+      activeTab: doc.activeTab ?? 'position',
+    };
+  }
+  if (doc?.keyframes) {
+    const duration = Number(doc.duration) || DEFAULT_DURATION;
+    return {
+      version: 4,
+      duration,
+      positionKeyframes: deepClone(doc.keyframes),
+      feedforwardKeyframesVolts: zeroFeedforwardKeyframes(duration),
+      referenceImu: null,
+      activeTab: 'position',
+    };
+  }
+  throw new Error('Trajectory document is missing keyframes');
+}
+
+function loadModel(model, keyframes, duration) {
+  model.loadFromJSON({ duration, keyframes });
+}
+
+function zeroPositionKeyframes(duration) {
+  return TrajectoryModel.JOINT_NAMES.map(() => [
+    { t: 0, q: 0 },
+    { t: duration, q: 0 },
+  ]);
+}
+
+function makeEmptyTrajectoryDoc(duration = DEFAULT_DURATION) {
+  return {
+    version: 4,
+    duration,
+    positionKeyframes: zeroPositionKeyframes(duration),
+    feedforwardKeyframesVolts: zeroFeedforwardKeyframes(duration),
+    referenceImu: null,
+    activeTab: 'position',
+  };
+}
+
+function createDefaultViewState(jointCount) {
+  return {
+    playhead: 0,
+    selectedJoint: 0,
+    visible: new Array(jointCount).fill(true),
+  };
+}
+
+function createSlot(index, doc = makeEmptyTrajectoryDoc()) {
+  const normalised = normaliseTrajectoryDoc(doc);
+  const positionTraj = new TrajectoryModel(normalised.duration);
+  const ffTraj = new FeedforwardTrajectoryModel(normalised.duration);
+  loadModel(positionTraj, normalised.positionKeyframes, normalised.duration);
+  loadModel(ffTraj, normalised.feedforwardKeyframesVolts, normalised.duration);
+  return {
+    index,
+    label: `Traj ${index + 1}`,
+    positionTraj,
+    ffTraj,
+    referenceImu: normalised.referenceImu,
+    activeTab: normalised.activeTab ?? 'position',
+    logData: null,
+    showRecorded: false,
+    driveFromRecorded: false,
+    undoStack: [],
+    redoStack: [],
+    pendingHistory: null,
+    applyingHistory: false,
+    selectedSavedName: '',
+    positionViewState: createDefaultViewState(positionTraj.jointCount),
+    ffViewState: createDefaultViewState(ffTraj.jointCount),
+    hasTrajectory: false,
+    cacheDirty: false,
+    cacheReady: false,
+    cacheUploading: false,
+    cachedFrameCount: 0,
+    cacheVersion: 0,
+    cacheTimer: null,
+    cachePromise: null,
+  };
+}
+
+const state = {
+  slots: Array.from({ length: 8 }, (_, index) => createSlot(index)),
+  activeSlotIndex: 0,
+  savedTrajFiles: [],
+  latestSavedTraj: null,
+  isPreviewing: false,
+  previewSpeed: 0.1,
+  previewRafId: null,
+  previewLastWall: 0,
+  optionHeld: false,
+  liveStreamHandle: null,
+  liveStreamHz: 60,
+  joystickMode: false,
+  joystickConnected: false,
+  joystickStreamHandle: null,
+  joystickHz: 50,
+  joystickGamepadIndex: null,
+  joystickPadKey: null,
+  joystickPositions: [0, 0, 0],
+  joystickServoAngles: [0, 0],
+  joystickNeutralSent: false,
+  joystickMotorsEnabled: true,
+  joystickPrevButtons: {},
+  joystickPrimedSlotIndex: null,
+  joystickPendingSlotIndex: null,
+  joystickPendingSinceMs: 0,
+  joystickActionSlotIndex: null,
+  joystickActionSeenRun: false,
+  joystickLoopActive: false,
+  joystickCalibrated: false,
+  joystickCalibrationTargets: null,
+  joystickLastAxes: null,
+  hidPad: null,
+  hidPadLayout: null,
+  hidPadState: null,
+  hidKind: null,
+  hidReportCount: 0,
+  hidLastReport: null,
+  hidBusy: false,
+  runBusy: false,
+  runSlotIndex: null,
+  runAwaitingRelease: false,
+  runUploadHoldHandle: null,
+  runAbortRequested: false,
+  nextRunId: 1,
+  showCurrentRobot: false,
+  motorKp: [0.0, 0.0, 0.0],
+  motorKd: [0.0, 0.0, 0.0],
+  currentAngles: [0, 0, 0, 0, 0],
+  imuQuat: [1, 0, 0, 0],
+  imuRpyDeg: [0, 0, 0],
+  busVoltages: [0, 0, 0],
+  bridgeConnected: false,
+  robotConnected: false,
+  robotLatencyMs: null,
+  robotMode: 'idle',
+  logAutoscroll: true,
+};
+
+function getSlot(index) {
+  return state.slots[index] ?? state.slots[0];
+}
+
+function getActiveSlot() {
+  return getSlot(state.activeSlotIndex);
+}
+
+function getSlotLabel(index) {
+  return getSlot(index).label;
+}
+
+function clearSlotCacheTimer(slot) {
+  if (slot.cacheTimer) {
+    clearTimeout(slot.cacheTimer);
+    slot.cacheTimer = null;
+  }
+}
+
+function resetSlotCacheState(slot, keepDirty = slot.hasTrajectory) {
+  clearSlotCacheTimer(slot);
+  slot.cacheReady = false;
+  slot.cacheUploading = false;
+  slot.cacheDirty = keepDirty;
+  slot.cachedFrameCount = 0;
+  slot.cachePromise = null;
+}
+
+function slotCacheStatus(slot) {
+  if (!slot.hasTrajectory) return 'empty';
+  if (slot.cacheUploading) return 'uploading';
+  if (slot.cacheReady && !slot.cacheDirty) return 'ready';
+  return 'pending';
+}
+
+document.getElementById('inputDuration').value = getActiveSlot().positionTraj.duration.toFixed(3);
+
+function currentDocSnapshotData(slot = getActiveSlot()) {
+  return {
+    version: 4,
+    duration: slot.positionTraj.duration,
+    positionKeyframes: deepClone(slot.positionTraj.keyframes),
+    feedforwardKeyframesVolts: deepClone(slot.ffTraj.keyframes),
+    referenceImu: deepClone(slot.referenceImu),
+    activeTab: slot.activeTab,
+  };
+}
+
+function beginHistoryCapture() {
+  const slot = getActiveSlot();
+  if (slot.applyingHistory || slot.pendingHistory !== null) return;
+  slot.pendingHistory = JSON.stringify(currentDocSnapshotData(slot));
+}
+
+function updateHistoryButtons() {
+  const slot = getActiveSlot();
+  document.getElementById('btnUndo').disabled = slot.undoStack.length === 0;
+  document.getElementById('btnRedo').disabled = slot.redoStack.length === 0;
+}
+
+function commitHistoryCapture() {
+  const slot = getActiveSlot();
+  if (slot.applyingHistory) {
+    slot.pendingHistory = null;
+    return;
+  }
+  if (slot.pendingHistory === null) return;
+  const after = JSON.stringify(currentDocSnapshotData(slot));
+  if (after !== slot.pendingHistory) {
+    slot.undoStack.push(slot.pendingHistory);
+    if (slot.undoStack.length > 100) slot.undoStack.shift();
+    slot.redoStack = [];
+    markSlotCacheDirty(state.activeSlotIndex);
+  }
+  slot.pendingHistory = null;
+  updateHistoryButtons();
+}
+
+const viewer = new Viewer3D('viewer3d');
+const comms = new Comms();
+const btnConnect = document.getElementById('btnConnect');
+btnConnect.addEventListener('click', async () => {
+  btnConnect.disabled = true;
+  try {
+    if (comms.isConnected) await comms.disconnect(true);
+    else await comms.connect();
+  } catch (err) { appendTerminal(`[USB connection failed: ${err.message}]`); }
+  finally { btnConnect.disabled = false; }
+});
+if (!navigator.serial) {
+  btnConnect.disabled = true;
+  btnConnect.title = 'USB control requires desktop Chrome or Edge over HTTPS';
+  appendTerminal('[USB control requires desktop Chrome or Edge over HTTPS]');
+}
+
+// ── Gamepad constants ───────────────────────────────────────────────────────
+const JOYSTICK_DEADBAND = 0.05;
+const JOYSTICK_MAX_RATE = 3.0;  // rad/s at full deflection
+const JOYSTICK_CALIBRATION_EXTREME = 0.70;
+const JOYSTICK_CALIBRATION_CENTER = 0.15;
+const JOYSTICK_RUN_HOLD_MS = 250;
+// GUI position limits: shoulder [-1.6, 1.3], spine [-130°, 0°], hip [-40°, 90°]
+const JOYSTICK_POSITION_LIMITS = [
+  [-1.6, 1.3],
+  [-130 * Math.PI / 180, 0.0],
+  [-40  * Math.PI / 180, 90 * Math.PI / 180],
+];
+const SERVO_LIMITS = [
+  [-Math.PI / 2, Math.PI / 2],
+  [-Math.PI / 2, Math.PI / 2],
+];
+const JOYSTICK_CALIBRATION_AXES = ['leftx', 'lefty', 'rightx', 'righty'];
+const SERVO_DISPLAY_OFFSETS = [Math.PI / 2, Math.PI / 2];
+const SERVO_DISPLAY_DIRECTIONS = [-1, -1];
+const SLOT_CACHE_DEBOUNCE_MS = 250;
+const JOYSTICK_ACTION_BUTTONS = [1, 0, 3, 2, 12, 13, 14, 15]; //A, B, X, Y, UP, DOWN, LEFT, RIGHT
+const JOYSTICK_MODE_TOGGLE_BUTTON = 17;
+const HID_GENERIC_DESKTOP = 0x01;
+const HID_JOYSTICK = 0x04;
+const HID_GAMEPAD = 0x05;
+const HID_BUTTON = 0x09;
+const HID_HAT = 0x39;
+const HID_AXIS_USAGES = new Set([0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37]);
+const NINTENDO_VENDOR_ID = 0x057e;
+const SWITCH_BT_OUTPUT_BYTES = 47;
+const SWITCH_DEFAULT_CENTER = 2048;
+const SWITCH_DEFAULT_RANGE = 1500;
+
+function servoAngleToDisplayDegrees(angle, idx) {
+  const deg = (angle * SERVO_DISPLAY_DIRECTIONS[idx] + SERVO_DISPLAY_OFFSETS[idx]) * 180 / Math.PI;
+  return clamp(deg, 0, 180);
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function applyDeadband(value, deadband = JOYSTICK_DEADBAND) {
+  const v = Number.isFinite(value) ? value : 0;
+  return Math.abs(v) < deadband ? 0 : clamp(v, -1, 1);
+}
+
+function readGamepadButton(pad, index) {
+  const button = pad?.buttons?.[index];
+  if (!button) return 0;
+  return Number.isFinite(button.value) ? button.value : (button.pressed ? 1 : 0);
+}
+
+function createJoystickCalibrationTargets() {
+  return {
+    'leftx+': false, 'leftx-': false,
+    'lefty+': false, 'lefty-': false,
+    'rightx+': false, 'rightx-': false,
+    'righty+': false, 'righty-': false,
+  };
+}
+
+function resetJoystickCalibration() {
+  state.joystickCalibrated = false;
+  state.joystickCalibrationTargets = createJoystickCalibrationTargets();
+  state.joystickLastAxes = null;
+}
+
+function pendingJoystickCalibrationLabels() {
+  const pending = Object.entries(state.joystickCalibrationTargets ?? {})
+    .filter(([, done]) => !done)
+    .map(([label]) => label);
+  return pending.length > 0 ? pending.join(', ') : 'center sticks';
+}
+
+function rumbleGamepad(pad, durationMs = 120) {
+  try {
+    pad?.vibrationActuator?.playEffect?.('dual-rumble', {
+      startDelay: 0, duration: durationMs, weakMagnitude: 0.0, strongMagnitude: 0.7,
+    });
+  } catch {}
+}
+
+function markJoystickCalibration(rawAxes, pad) {
+  if (!state.joystickCalibrationTargets) resetJoystickCalibration();
+  state.joystickLastAxes = rawAxes;
+  for (const axisName of JOYSTICK_CALIBRATION_AXES) {
+    const value = rawAxes[axisName] ?? 0;
+    if (value > JOYSTICK_CALIBRATION_EXTREME) state.joystickCalibrationTargets[`${axisName}+`] = true;
+    else if (value < -JOYSTICK_CALIBRATION_EXTREME) state.joystickCalibrationTargets[`${axisName}-`] = true;
+  }
+  const allExtremesSeen = Object.values(state.joystickCalibrationTargets).every(Boolean);
+  const centered = JOYSTICK_CALIBRATION_AXES.every(axisName => Math.abs(rawAxes[axisName] ?? 0) <= JOYSTICK_CALIBRATION_CENTER);
+  if (allExtremesSeen && centered && !state.joystickCalibrated) {
+    state.joystickCalibrated = true;
+    rumbleGamepad(pad);
+    appendTerminal('[gamepad calibrated]');
+  }
+}
+
+function gamepadApiPads() {
+  if (!navigator.getGamepads) return [];
+  try {
+    return Array.from(navigator.getGamepads()).filter(Boolean);
+  } catch (err) {
+    appendTerminal(`[gamepad API blocked: ${err.name ?? err.message ?? err}]`);
+    return [];
+  }
+}
+
+function hidUsagePage(usage) {
+  return (usage >>> 16) & 0xffff;
+}
+
+function hidUsageId(usage) {
+  return usage & 0xffff;
+}
+
+function isHidGamepadCollection(collection) {
+  if (!collection) return false;
+  if (collection.usagePage === HID_GENERIC_DESKTOP && [HID_JOYSTICK, HID_GAMEPAD].includes(collection.usage)) {
+    return true;
+  }
+  return (collection.children ?? []).some(isHidGamepadCollection);
+}
+
+function isHidGamepadDevice(device) {
+  return (device?.collections ?? []).some(isHidGamepadCollection);
+}
+
+function isNintendoHidGamepad(device) {
+  const name = (device?.productName ?? '').toLowerCase();
+  return device?.vendorId === NINTENDO_VENDOR_ID || name.includes('pro controller') || name.includes('joy-con');
+}
+
+function collectHidGamepadCollections(collections, out = []) {
+  for (const collection of collections ?? []) {
+    if (isHidGamepadCollection(collection)) out.push(collection);
+    collectHidGamepadCollections(collection.children, out);
+  }
+  return out;
+}
+
+function hidItemUsages(item, count) {
+  if (item.isRange && Number.isFinite(item.usageMinimum) && Number.isFinite(item.usageMaximum)) {
+    const out = [];
+    for (let usage = item.usageMinimum; usage <= item.usageMaximum && out.length < count; usage++) {
+      out.push(usage);
+    }
+    return out;
+  }
+  return Array.isArray(item.usages) ? item.usages.slice(0, count) : [];
+}
+
+function preferredHidAxisIndex(usageId) {
+  if (usageId === 0x30) return 0; // X
+  if (usageId === 0x31) return 1; // Y
+  if (usageId === 0x33 || usageId === 0x32) return 2; // Rx or Z
+  if (usageId === 0x34 || usageId === 0x35) return 3; // Ry or Rz
+  return null;
+}
+
+function assignHidAxisIndex(usageId, usedAxes) {
+  const preferred = preferredHidAxisIndex(usageId);
+  if (preferred !== null && !usedAxes.has(preferred)) {
+    usedAxes.add(preferred);
+    return preferred;
+  }
+  for (let i = 0; i < 6; i++) {
+    if (!usedAxes.has(i)) {
+      usedAxes.add(i);
+      return i;
+    }
+  }
+  return null;
+}
+
+function createHidGamepadLayout(device) {
+  const collections = collectHidGamepadCollections(device.collections);
+  for (const collection of collections) {
+    for (const report of collection.inputReports ?? []) {
+      const fields = [];
+      const usedAxes = new Set();
+      let bitOffset = 0;
+      for (const item of report.items ?? []) {
+        const count = item.reportCount ?? 0;
+        const size = item.reportSize ?? 0;
+        if (count <= 0 || size <= 0) continue;
+        const usages = hidItemUsages(item, count);
+        if (!item.isConstant && !item.isBufferedBytes) {
+          if (item.isArray) {
+            const minPage = hidUsagePage(item.usageMinimum ?? 0);
+            if (minPage === HID_BUTTON) {
+              fields.push({
+                type: 'buttonArray',
+                bitOffset,
+                bitSize: size,
+                count,
+                minUsage: hidUsageId(item.usageMinimum),
+                maxUsage: hidUsageId(item.usageMaximum),
+              });
+            }
+          } else {
+            for (let i = 0; i < count; i++) {
+              const usage = usages[i] ?? usages[usages.length - 1] ?? 0;
+              const page = hidUsagePage(usage);
+              const usageId = hidUsageId(usage);
+              const field = {
+                bitOffset: bitOffset + i * size,
+                bitSize: size,
+                min: item.logicalMinimum ?? 0,
+                max: item.logicalMaximum ?? 1,
+              };
+              if (page === HID_GENERIC_DESKTOP && HID_AXIS_USAGES.has(usageId)) {
+                const axis = assignHidAxisIndex(usageId, usedAxes);
+                if (axis !== null) fields.push({ ...field, type: 'axis', axis });
+              } else if (page === HID_GENERIC_DESKTOP && usageId === HID_HAT) {
+                fields.push({ ...field, type: 'hat' });
+              } else if (page === HID_BUTTON && usageId > 0) {
+                fields.push({ ...field, type: 'button', button: usageId - 1 });
+              }
+            }
+          }
+        }
+        bitOffset += count * size;
+      }
+      const axes = new Set(fields.filter(f => f.type === 'axis' && f.axis < 4).map(f => f.axis));
+      const buttons = fields.filter(f => f.type === 'button' || f.type === 'buttonArray').length;
+      if (axes.size >= 2 && buttons > 0) {
+        return { reportId: report.reportId, fields };
+      }
+    }
+  }
+  return null;
+}
+
+function readHidBits(data, bitOffset, bitSize, signed) {
+  let value = 0;
+  for (let i = 0; i < bitSize; i++) {
+    const sourceBit = bitOffset + i;
+    const byteIndex = sourceBit >> 3;
+    if (byteIndex >= data.byteLength) break;
+    const bit = (data.getUint8(byteIndex) >> (sourceBit & 7)) & 1;
+    value += bit * (2 ** i);
+  }
+  if (signed && bitSize > 0) {
+    const signBit = 2 ** (bitSize - 1);
+    if (value >= signBit) value -= 2 ** bitSize;
+  }
+  return value;
+}
+
+function scaleHidAxis(value, field) {
+  const min = Number.isFinite(field.min) ? field.min : 0;
+  const max = Number.isFinite(field.max) ? field.max : 1;
+  if (max === min) return 0;
+  if (min < 0) {
+    return clamp(value / Math.max(Math.abs(min), Math.abs(max), 1), -1, 1);
+  }
+  return clamp(((value - min) / (max - min)) * 2 - 1, -1, 1);
+}
+
+function makeHidButtons(count = 18) {
+  return Array.from({ length: count }, () => ({ pressed: false, value: 0 }));
+}
+
+function setHidButton(buttons, index, pressed, value = pressed ? 1 : 0) {
+  while (buttons.length <= index) buttons.push({ pressed: false, value: 0 });
+  buttons[index] = { pressed, value };
+}
+
+function applyHidHat(buttons, value, field) {
+  let hat = value;
+  if (field.min === 1 && field.max >= 8) hat -= 1;
+  if (hat < 0 || hat > 7) return;
+  setHidButton(buttons, 12, [7, 0, 1].includes(hat));
+  setHidButton(buttons, 13, [3, 4, 5].includes(hat));
+  setHidButton(buttons, 14, [5, 6, 7].includes(hat));
+  setHidButton(buttons, 15, [1, 2, 3].includes(hat));
+}
+
+function createHidPadState(device) {
+  return {
+    index: -1,
+    id: `HID ${device.productName || 'gamepad'}`,
+    connected: true,
+    mapping: 'hid',
+    axes: [0, 0, 0, 0],
+    buttons: makeHidButtons(),
+  };
+}
+
+function switchAxis(value) {
+  return clamp((value - SWITCH_DEFAULT_CENTER) / SWITCH_DEFAULT_RANGE, -1, 1);
+}
+
+function unpackSwitchStick(byte0, byte1, byte2) {
+  return [
+    byte0 | ((byte1 & 0x0f) << 8),
+    (byte1 >> 4) | (byte2 << 4),
+  ];
+}
+
+function parseSwitchControllerData(data) {
+  if (data.byteLength < 11) return null;
+  const b2 = data.getUint8(2);
+  const b3 = data.getUint8(3);
+  const b4 = data.getUint8(4);
+  const buttons = makeHidButtons(18);
+  setHidButton(buttons, 0, !!(b2 & 0x04)); // B
+  setHidButton(buttons, 1, !!(b2 & 0x08)); // A
+  setHidButton(buttons, 2, !!(b2 & 0x01)); // Y
+  setHidButton(buttons, 3, !!(b2 & 0x02)); // X
+  setHidButton(buttons, 4, !!(b4 & 0x40)); // L
+  setHidButton(buttons, 5, !!(b2 & 0x40)); // R
+  setHidButton(buttons, 6, !!(b4 & 0x80)); // ZL
+  setHidButton(buttons, 7, !!(b2 & 0x80)); // ZR
+  setHidButton(buttons, 8, !!(b3 & 0x01)); // -
+  setHidButton(buttons, 9, !!(b3 & 0x02)); // +
+  setHidButton(buttons, 10, !!(b3 & 0x08)); // left stick
+  setHidButton(buttons, 11, !!(b3 & 0x04)); // right stick
+  setHidButton(buttons, 12, !!(b4 & 0x02)); // up
+  setHidButton(buttons, 13, !!(b4 & 0x01)); // down
+  setHidButton(buttons, 14, !!(b4 & 0x08)); // left
+  setHidButton(buttons, 15, !!(b4 & 0x04)); // right
+  setHidButton(buttons, 16, !!(b3 & 0x10)); // home
+  setHidButton(buttons, 17, !!(b3 & 0x20)); // capture
+
+  const [lx, ly] = unpackSwitchStick(data.getUint8(5), data.getUint8(6), data.getUint8(7));
+  const [rx, ry] = unpackSwitchStick(data.getUint8(8), data.getUint8(9), data.getUint8(10));
+  return {
+    axes: [
+      switchAxis(lx),
+      -switchAxis(ly),
+      switchAxis(rx),
+      -switchAxis(ry),
+    ],
+    buttons,
+  };
+}
+
+function updateNintendoHidPadState(reportId, data) {
+  if (![0x21, 0x30].includes(reportId)) return false;
+  const parsed = parseSwitchControllerData(data);
+  if (!parsed) return false;
+  state.hidPadState = {
+    ...createHidPadState(state.hidPad),
+    axes: parsed.axes,
+    buttons: parsed.buttons,
+  };
+  return true;
+}
+
+function updateHidPadState(data) {
+  if (!state.hidPad || !state.hidPadLayout) return;
+  const axes = [0, 0, 0, 0, 0, 0];
+  const buttons = makeHidButtons();
+  for (const field of state.hidPadLayout.fields) {
+    if (field.type === 'buttonArray') {
+      for (let i = 0; i < field.count; i++) {
+        const usage = readHidBits(data, field.bitOffset + i * field.bitSize, field.bitSize, false);
+        if (usage >= field.minUsage && usage <= field.maxUsage) setHidButton(buttons, usage - 1, true);
+      }
+      continue;
+    }
+    const value = readHidBits(data, field.bitOffset, field.bitSize, field.min < 0);
+    if (field.type === 'axis') axes[field.axis] = scaleHidAxis(value, field);
+    else if (field.type === 'hat') applyHidHat(buttons, value, field);
+    else if (field.type === 'button') setHidButton(buttons, field.button, value > field.min);
+  }
+  state.hidPadState = {
+    ...createHidPadState(state.hidPad),
+    axes,
+    buttons,
+  };
+}
+
+function handleHidInputReport(event) {
+  if (event.device !== state.hidPad) return;
+  state.hidReportCount += 1;
+  state.hidLastReport = { id: event.reportId, len: event.data.byteLength };
+  if (state.hidKind === 'nintendo' && updateNintendoHidPadState(event.reportId, event.data)) {
+    if (state.hidReportCount === 1) appendTerminal(`[HID report 0x${event.reportId.toString(16)} len=${event.data.byteLength}]`);
+    return;
+  }
+  if (event.reportId !== state.hidPadLayout?.reportId) return;
+  updateHidPadState(event.data);
+  if (state.hidReportCount === 1) appendTerminal(`[HID report 0x${event.reportId.toString(16)} len=${event.data.byteLength}]`);
+}
+
+function sleepMs(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function sendNintendoSubcommand(device, counter, subcommand, args = []) {
+  const data = new Uint8Array(SWITCH_BT_OUTPUT_BYTES);
+  data.set([counter & 0xff, 0x00, 0x01, 0x40, 0x40, 0x00, 0x01, 0x40, 0x40, subcommand, ...args]);
+  await device.sendReport(0x01, data);
+}
+
+async function initNintendoHidGamepad(device) {
+  try {
+    await sendNintendoSubcommand(device, 1, 0x30, [0x01]); // player LED 1
+    await sleepMs(40);
+    await sendNintendoSubcommand(device, 2, 0x40, [0x00]); // IMU off; buttons/sticks still report
+    await sleepMs(40);
+    await sendNintendoSubcommand(device, 3, 0x03, [0x30]); // standard full reports
+    appendTerminal('[Nintendo HID initialized]');
+  } catch (err) {
+    appendTerminal(`[Nintendo HID init failed: ${err.name ?? err.message ?? err}]`);
+  }
+}
+
+async function useHidGamepad(device) {
+  const kind = isNintendoHidGamepad(device) ? 'nintendo' : 'generic';
+  const layout = kind === 'nintendo' ? { reportId: 0x30, fields: [] } : createHidGamepadLayout(device);
+  if (kind !== 'nintendo' && !layout) {
+    appendTerminal(`[HID gamepad unsupported: ${device.productName || 'unknown device'}]`);
+    return null;
+  }
+  if (state.hidPad && state.hidPad !== device) {
+    state.hidPad.removeEventListener('inputreport', handleHidInputReport);
+  }
+  state.hidPad = device;
+  state.hidPadLayout = layout;
+  state.hidKind = kind;
+  state.hidReportCount = 0;
+  state.hidLastReport = null;
+  state.joystickGamepadIndex = -1;
+  state.hidPadState = createHidPadState(device);
+  device.addEventListener('inputreport', handleHidInputReport);
+  if (!device.opened) await device.open();
+  if (kind === 'nintendo') await initNintendoHidGamepad(device);
+  appendTerminal(`[HID gamepad ready: ${device.productName || 'unknown device'}]`);
+  return state.hidPadState;
+}
+
+async function connectHidGamepad(prompt = false) {
+  if (!navigator.hid || state.hidBusy) return null;
+  state.hidBusy = true;
+  try {
+    let devices;
+    if (prompt) {
+      appendTerminal('[select Bluetooth/HID gamepad in browser prompt]');
+      devices = await navigator.hid.requestDevice({
+        filters: [
+          { usagePage: HID_GENERIC_DESKTOP, usage: HID_JOYSTICK },
+          { usagePage: HID_GENERIC_DESKTOP, usage: HID_GAMEPAD },
+        ],
+      });
+    } else {
+      devices = await navigator.hid.getDevices();
+    }
+    const device = devices.find(isHidGamepadDevice);
+    return device ? await useHidGamepad(device) : null;
+  } catch (err) {
+    if (prompt) appendTerminal(`[HID gamepad unavailable: ${err.name ?? err.message ?? err}]`);
+    return null;
+  } finally {
+    state.hidBusy = false;
+  }
+}
+
+function clearHidGamepad(device) {
+  if (device && state.hidPad !== device) return;
+  state.hidPad?.removeEventListener('inputreport', handleHidInputReport);
+  state.hidPad = null;
+  state.hidPadLayout = null;
+  state.hidPadState = null;
+  state.hidKind = null;
+  state.hidReportCount = 0;
+  state.hidLastReport = null;
+  if (state.joystickGamepadIndex === -1) state.joystickGamepadIndex = null;
+  renderJoystickUi();
+  updateLiveIndicator();
+}
+
+function getActiveGamepad() {
+  const hidPad = state.hidPad?.opened ? state.hidPadState : null;
+  if (state.joystickGamepadIndex === -1) return hidPad;
+  const pads = gamepadApiPads();
+  if (state.joystickGamepadIndex != null) {
+    const preferred = pads.find(pad => pad.index === state.joystickGamepadIndex && pad.connected);
+    if (preferred) return preferred;
+  }
+  return pads.find(pad => pad.connected) ?? hidPad;
+}
+
+function sampleJoystickCommand(pad) {
+  const rawAxes = {
+    leftx:  Number.isFinite(pad?.axes?.[0]) ? pad.axes[0]  : 0,
+    lefty:  Number.isFinite(pad?.axes?.[1]) ? -pad.axes[1] : 0,
+    rightx: Number.isFinite(pad?.axes?.[2]) ? pad.axes[2]  : 0,
+    righty: Number.isFinite(pad?.axes?.[3]) ? -pad.axes[3] : 0,
+  };
+  return {
+    connected: !!pad,
+    id: pad?.id ?? '',
+    rawAxes,
+    shoulder: applyDeadband(rawAxes.lefty),
+    spine:    applyDeadband(rawAxes.rightx),
+    hip:      applyDeadband(rawAxes.righty),
+    lb: readGamepadButton(pad, 4) > 0.5,
+    rb: readGamepadButton(pad, 5) > 0.5,
+    lt: readGamepadButton(pad, 6) > 0.5,
+    rt: readGamepadButton(pad, 7) > 0.5,
+  };
+}
+
+function currentJoystickStatusText() {
+  if (!state.joystickMode) {
+    return 'Mode off. Left Y, right X, and right Y integrate shoulder, spine, and hip position.';
+  }
+  if (!state.bridgeConnected || !state.robotConnected) {
+    return 'Joystick mode active. Waiting for robot link.';
+  }
+  if (!state.joystickConnected) {
+    return navigator.hid
+      ? 'Joystick mode active. Press any gamepad button, or pick a Bluetooth/HID gamepad when prompted.'
+      : 'Joystick mode active. Press any gamepad button with this tab focused.';
+  }
+  if (!state.joystickCalibrated) {
+    const axes = state.joystickLastAxes
+      ? JOYSTICK_CALIBRATION_AXES.map(axis => `${axis}:${(state.joystickLastAxes[axis] ?? 0).toFixed(2)}`).join(' ')
+      : (state.hidLastReport ? `waiting movement, last HID 0x${state.hidLastReport.id.toString(16)} len=${state.hidLastReport.len}` : 'waiting movement');
+    return `Calibrate gamepad: sweep both sticks, then release to center. ${axes} Pending: ${pendingJoystickCalibrationLabels()}`;
+  }
+  if (state.joystickPendingSlotIndex !== null) {
+    return `${getSlotLabel(state.joystickPendingSlotIndex)} ready: release for one cycle or keep holding to loop.`;
+  }
+  if (state.joystickPrimedSlotIndex !== null) {
+    return `${getSlotLabel(state.joystickPrimedSlotIndex)} primed at start pose. Tap the same button again to run. Button 15 toggles idle/position.`;
+  }
+  if (state.joystickActionSlotIndex !== null) {
+    const runMode = state.joystickLoopActive ? 'looping until button release' : 'running once';
+    return `${getSlotLabel(state.joystickActionSlotIndex)} ${runMode}. Button 15 toggles idle/position.`;
+  }
+  const [sh, sp, hi] = state.joystickPositions.map(v => `${v.toFixed(2)}rad`);
+  const [srvL, srvR] = state.joystickServoAngles.map((v, i) => `${servoAngleToDisplayDegrees(v, i).toFixed(0)}deg`);
+  const mode = state.joystickMotorsEnabled ? 'position' : 'idle';
+  return `Pos sh/sp/hi: ${sh} ${sp} ${hi} | Servo L/R: ${srvL} ${srvR} | Btn15: ${mode}`;
+}
+
+function renderJoystickUi() {
+  const btn = document.getElementById('btnJoystickMode');
+  const status = document.getElementById('joystick-status');
+  btn.classList.toggle('btn-joystick-active', state.joystickMode);
+  btn.textContent = state.joystickMode ? 'Gamepad ON' : 'Gamepad OFF';
+  btn.disabled = state.runBusy || state.runAwaitingRelease;
+  document.getElementById('btnRun').disabled = state.joystickMode || state.runBusy || state.runAwaitingRelease;
+  status.textContent = currentJoystickStatusText();
+}
+
+function sendJoystickNeutral() {
+  comms.sendRaw('STOP');
+}
+
+function sendJoystickHoldPose() {
+  comms.sendPose([
+    state.joystickPositions[0],
+    state.joystickPositions[1],
+    state.joystickPositions[2],
+    state.joystickServoAngles[0],
+    state.joystickServoAngles[1],
+  ], 1);
+}
+
+function syncJoystickDesiredToCurrentPose() {
+  state.joystickPositions = [
+    Number.isFinite(state.currentAngles[0]) ? state.currentAngles[0] : 0,
+    Number.isFinite(state.currentAngles[1]) ? state.currentAngles[1] : 0,
+    Number.isFinite(state.currentAngles[2]) ? state.currentAngles[2] : 0,
+  ];
+  state.joystickServoAngles = [
+    Number.isFinite(state.currentAngles[3]) ? state.currentAngles[3] : 0,
+    Number.isFinite(state.currentAngles[4]) ? state.currentAngles[4] : 0,
+  ];
+}
+
+function readButtonEdge(pad, index) {
+  return readButtonTransition(pad, index).pressedEdge;
+}
+
+function readButtonTransition(pad, index) {
+  const pressed = readGamepadButton(pad, index) > 0.5;
+  const prev = !!state.joystickPrevButtons[index];
+  state.joystickPrevButtons[index] = pressed;
+  return {
+    pressed,
+    pressedEdge: pressed && !prev,
+    releasedEdge: !pressed && prev,
+  };
+}
+
+function clearJoystickTrajectoryState() {
+  state.joystickPrimedSlotIndex = null;
+  state.joystickPendingSlotIndex = null;
+  state.joystickPendingSinceMs = 0;
+  state.joystickActionSlotIndex = null;
+  state.joystickActionSeenRun = false;
+  state.joystickLoopActive = false;
+}
+
+function finishJoystickActionRun() {
+  if (state.joystickActionSlotIndex === null) return;
+  clearJoystickTrajectoryState();
+  syncJoystickDesiredToCurrentPose();
+  if (state.joystickMode && state.joystickMotorsEnabled) {
+    sendJoystickHoldPose();
+  }
+  renderJoystickUi();
+  updateLiveIndicator();
+}
+
+function primeJoystickSlot(slotIndex, pad) {
+  const slot = getSlot(slotIndex);
+  if (!slot.hasTrajectory) {
+    appendTerminal(`[${slot.label} has no trajectory]`);
+    return;
+  }
+  if (!slot.cacheReady || slot.cacheDirty || slot.cacheUploading) {
+    appendTerminal(`[${slot.label} cache not ready]`);
+    rumbleGamepad(pad, 40);
+    return;
+  }
+  const startPose = slot.positionTraj.getPoseAt(0);
+  state.joystickPositions = [startPose[0], startPose[1], startPose[2]];
+  state.joystickServoAngles = [startPose[3], startPose[4]];
+  clearJoystickTrajectoryState();
+  state.joystickPrimedSlotIndex = slotIndex;
+  sendJoystickHoldPose();
+  appendTerminal(`[${slot.label} primed at start pose]`);
+  renderJoystickUi();
+  updateLiveIndicator();
+  rumbleGamepad(pad, 60);
+}
+
+function startJoystickSlotRun(slotIndex, pad, loop) {
+  state.joystickPendingSlotIndex = null;
+  state.joystickPendingSinceMs = 0;
+  state.joystickActionSlotIndex = slotIndex;
+  state.joystickActionSeenRun = false;
+  state.joystickLoopActive = loop;
+  state.joystickPrimedSlotIndex = null;
+  sendSlotRunCommand(slotIndex, loop ? 'gamepad LOOP' : 'gamepad RUN', loop);
+  renderJoystickUi();
+  updateLiveIndicator();
+  rumbleGamepad(pad, 60);
+}
+
+function triggerJoystickSlotRun(slotIndex, pad) {
+  if (state.joystickPrimedSlotIndex !== slotIndex) {
+    primeJoystickSlot(slotIndex, pad);
+    return;
+  }
+  state.joystickPendingSlotIndex = slotIndex;
+  state.joystickPendingSinceMs = performance.now();
+  appendTerminal(`[${getSlotLabel(slotIndex)} release for one cycle, hold to loop]`);
+  renderJoystickUi();
+  updateLiveIndicator();
+}
+
+function pollJoystickAndSend() {
+  if (!state.joystickMode) return;
+
+  const pad = getActiveGamepad();
+  if (!pad) {
+    if (state.joystickConnected) appendTerminal('[gamepad disconnected]');
+    state.joystickConnected = false;
+    state.joystickGamepadIndex = null;
+    state.joystickPadKey = null;
+    state.joystickPrevButtons = {};
+    clearJoystickTrajectoryState();
+    resetJoystickCalibration();
+    if (!state.joystickNeutralSent) {
+      sendJoystickNeutral();
+      state.joystickNeutralSent = true;
+    }
+    renderJoystickUi();
+    updateLiveIndicator();
+    return;
+  }
+
+  const padKey = `${pad.index}:${pad.id}`;
+  if (state.joystickPadKey !== padKey) {
+    state.joystickPadKey = padKey;
+    state.joystickPrevButtons = {};
+    clearJoystickTrajectoryState();
+    resetJoystickCalibration();
+    appendTerminal(`[gamepad calibration required: ${pad.id}]`);
+  }
+
+  const command = sampleJoystickCommand(pad);
+  state.joystickConnected = true;
+  state.joystickGamepadIndex = pad.index;
+  markJoystickCalibration(command.rawAxes, pad);
+  if (!state.joystickCalibrated) {
+    if (!state.joystickNeutralSent) {
+      sendJoystickNeutral();
+      state.joystickNeutralSent = true;
+    }
+    renderJoystickUi();
+    updateLiveIndicator();
+    return;
+  }
+
+  if (readButtonEdge(pad, JOYSTICK_MODE_TOGGLE_BUTTON)) {
+    state.joystickMotorsEnabled = !state.joystickMotorsEnabled;
+    if (!state.joystickMotorsEnabled) {
+      sendJoystickNeutral();
+      state.joystickNeutralSent = true;
+      clearJoystickTrajectoryState();
+    } else {
+      syncJoystickDesiredToCurrentPose();
+      sendJoystickHoldPose();
+      state.joystickNeutralSent = false;
+      clearJoystickTrajectoryState();
+    }
+    appendTerminal(state.joystickMotorsEnabled ? '[position control]' : '[motor idle]');
+    rumbleGamepad(pad, 50);
+    renderJoystickUi();
+    updateLiveIndicator();
+    return;
+  }
+
+  if (!state.joystickMotorsEnabled) {
+    if (!state.joystickNeutralSent) {
+      sendJoystickNeutral();
+      state.joystickNeutralSent = true;
+    }
+    renderJoystickUi();
+    updateLiveIndicator();
+    return;
+  }
+
+  state.joystickNeutralSent = false;  // only clear when in position control, so idle sends STOP just once
+
+  const actionTransitions = JOYSTICK_ACTION_BUTTONS.map(index => readButtonTransition(pad, index));
+  if (state.joystickActionSlotIndex !== null) {
+    const transition = actionTransitions[state.joystickActionSlotIndex];
+    if (state.joystickLoopActive && transition?.releasedEdge) {
+      appendTerminal(`[${getSlotLabel(state.joystickActionSlotIndex)} loop released]`);
+      finishJoystickActionRun();
+    }
+  } else if (state.joystickPendingSlotIndex !== null) {
+    const slotIndex = state.joystickPendingSlotIndex;
+    const transition = actionTransitions[slotIndex];
+    if (transition?.releasedEdge) {
+      startJoystickSlotRun(slotIndex, pad, false);
+    } else if (transition?.pressed && performance.now() - state.joystickPendingSinceMs >= JOYSTICK_RUN_HOLD_MS) {
+      startJoystickSlotRun(slotIndex, pad, true);
+    }
+  } else {
+    const slotIndex = actionTransitions.findIndex(transition => transition.pressedEdge);
+    if (slotIndex >= 0) triggerJoystickSlotRun(slotIndex, pad);
+  }
+
+  if (state.joystickActionSlotIndex !== null) {
+    renderJoystickUi();
+    updateLiveIndicator();
+    return;
+  }
+
+  if (state.joystickPrimedSlotIndex === null) {
+    const dt = 1 / state.joystickHz;
+    state.joystickPositions[0] = clamp(
+      state.joystickPositions[0] + command.shoulder * JOYSTICK_MAX_RATE * dt,
+      JOYSTICK_POSITION_LIMITS[0][0], JOYSTICK_POSITION_LIMITS[0][1]);
+    state.joystickPositions[1] = clamp(
+      state.joystickPositions[1] + command.spine * JOYSTICK_MAX_RATE * dt,
+      JOYSTICK_POSITION_LIMITS[1][0], JOYSTICK_POSITION_LIMITS[1][1]);
+    state.joystickPositions[2] = clamp(
+      state.joystickPositions[2] + command.hip * JOYSTICK_MAX_RATE * dt,
+      JOYSTICK_POSITION_LIMITS[2][0], JOYSTICK_POSITION_LIMITS[2][1]);
+
+    const servoStep = 3.0 / state.joystickHz;
+    if (command.lt) state.joystickServoAngles[0] -= servoStep;
+    if (command.lb) state.joystickServoAngles[0] += servoStep;
+    if (command.rt) state.joystickServoAngles[1] += servoStep;
+    if (command.rb) state.joystickServoAngles[1] -= servoStep;
+    state.joystickServoAngles[0] = clamp(state.joystickServoAngles[0], SERVO_LIMITS[0][0], SERVO_LIMITS[0][1]);
+    state.joystickServoAngles[1] = clamp(state.joystickServoAngles[1], SERVO_LIMITS[1][0], SERVO_LIMITS[1][1]);
+  }
+
+  sendJoystickHoldPose();
+  renderJoystickUi();
+  updateLiveIndicator();
+}
+
+async function setJoystickMode(enabled, reason = null) {
+  if (enabled === state.joystickMode) {
+    if (reason) appendTerminal(reason);
+    return;
+  }
+  if (enabled && (state.runBusy || state.runAwaitingRelease)) {
+    appendTerminal('[finish RUN before enabling joystick mode]');
+    return;
+  }
+
+  if (enabled) {
+    stopPreview(true);
+    stopLiveStream(false);
+    state.joystickMode = true;
+    state.joystickConnected = false;
+    state.joystickPadKey = null;
+    state.joystickNeutralSent = false;
+    state.joystickMotorsEnabled = true;
+    state.joystickPrevButtons = {};
+    clearJoystickTrajectoryState();
+    syncJoystickDesiredToCurrentPose();
+    resetJoystickCalibration();
+    if (!getActiveGamepad()) await connectHidGamepad(true);
+    if (!state.joystickMode) return;
+    state.joystickStreamHandle = setInterval(pollJoystickAndSend, 1000 / state.joystickHz);
+    pollJoystickAndSend();
+    appendTerminal(reason ?? '[joystick mode enabled]');
+  } else {
+    if (state.joystickStreamHandle) clearInterval(state.joystickStreamHandle);
+    state.joystickStreamHandle = null;
+    state.joystickMode = false;
+    state.joystickConnected = false;
+    state.joystickGamepadIndex = null;
+    state.joystickPadKey = null;
+    state.joystickPrevButtons = {};
+    clearJoystickTrajectoryState();
+    state.joystickNeutralSent = false;
+    resetJoystickCalibration();
+    comms.sendRaw('STOP');
+    appendTerminal(reason ?? '[joystick mode disabled]');
+  }
+
+  renderJoystickUi();
+  updateLiveIndicator();
+}
+
+const positionEditor = new ChartEditor('chartCanvas', getActiveSlot().positionTraj, {
+  yAxisLabel: 'rad',
+  // Motor logs only (shoulder, spine, hip); omit servo arms (arm_l, arm_r)
+  measuredKeys: ['meas_shoulder', 'meas_spine', 'meas_hip', null, null],
+  onScrub(t) {
+    updatePoseTo(t);
+    if (state.optionHeld && !state.joystickMode && !state.runBusy && !state.runAwaitingRelease) streamLivePose(t);
+  },
+  onKeyframeEdit() {
+    updatePoseTo(positionEditor.playhead);
+    if (state.optionHeld && !state.joystickMode && !state.runBusy && !state.runAwaitingRelease) streamLivePose(positionEditor.playhead);
+  },
+  onJointSelect() { buildCurvesTable(); },
+  onEditStart: beginHistoryCapture,
+  onEditCommit: commitHistoryCapture,
+});
+
+const ffEditor = new ChartEditor('ffChartCanvas', getActiveSlot().ffTraj, {
+  yAxisLabel: 'Volts',
+  onScrub(t) { updatePoseTo(t); },
+  onKeyframeEdit() { updateCurveValues(ffEditor.playhead); },
+  onJointSelect() { buildCurvesTable(); },
+  onEditStart: beginHistoryCapture,
+  onEditCommit: commitHistoryCapture,
+});
+
+function getActiveTab() {
+  return getActiveSlot().activeTab;
+}
+
+function saveSlotEditorState(slot = getActiveSlot()) {
+  slot.positionViewState = positionEditor.snapshotViewState();
+  slot.ffViewState = ffEditor.snapshotViewState();
+}
+
+function bindEditorsToSlot(slot) {
+  positionEditor.setLogData(null);
+  ffEditor.setLogData(null);
+  positionEditor.setTrajectory(slot.positionTraj);
+  ffEditor.setTrajectory(slot.ffTraj);
+  positionEditor.restoreViewState(slot.positionViewState);
+  ffEditor.restoreViewState(slot.ffViewState);
+  document.getElementById('inputDuration').value = slot.positionTraj.duration.toFixed(3);
+}
+
+function getActiveEditor() {
+  return getActiveTab() === 'position' ? positionEditor : ffEditor;
+}
+
+function getActiveTraj() {
+  const slot = getActiveSlot();
+  return getActiveTab() === 'position' ? slot.positionTraj : slot.ffTraj;
+}
+
+function setSelectedJoint(j) {
+  getActiveEditor().setSelectedJoint(j);
+  document.querySelectorAll('#curvesBody tr').forEach((tr, i) => {
+    tr.classList.toggle('selected', i === j);
+  });
+}
+
+function renderSlotTabs() {
+  const slotTabs = document.getElementById('slot-tabs');
+  slotTabs.innerHTML = '';
+  state.slots.forEach((slot, index) => {
+    const btn = document.createElement('button');
+    btn.className = `slot-tab${index === state.activeSlotIndex ? ' active' : ''}`;
+    btn.textContent = slot.label;
+    btn.title = `${slot.label} cache: ${slotCacheStatus(slot)}`;
+    btn.addEventListener('click', () => switchSlot(index));
+    slotTabs.appendChild(btn);
+  });
+}
+
+function syncSavedTrajSelection() {
+  const sel = document.getElementById('savedTrajSelect');
+  const slot = getActiveSlot();
+  const preferred = state.savedTrajFiles.includes(slot.selectedSavedName)
+    ? slot.selectedSavedName
+    : (state.latestSavedTraj && state.savedTrajFiles.includes(state.latestSavedTraj))
+      ? state.latestSavedTraj
+      : (state.savedTrajFiles[0] ?? '');
+  slot.selectedSavedName = preferred;
+  if (sel) sel.value = preferred;
+}
+
+function switchTab(tab, opts = {}) {
+  const slot = getActiveSlot();
+  if (!opts.skipSaveState) saveSlotEditorState(slot);
+  slot.activeTab = tab;
+  document.getElementById('tabPosition').classList.toggle('active', tab === 'position');
+  document.getElementById('tabFeedforward').classList.toggle('active', tab === 'feedforward');
+  document.getElementById('chartCanvas').classList.toggle('hidden', tab !== 'position');
+  document.getElementById('ffChartCanvas').classList.toggle('hidden', tab !== 'feedforward');
+  document.getElementById('ff-scale-controls').classList.toggle('active', tab === 'feedforward');
+  document.getElementById('positionOptsRow').style.display = tab === 'position' ? 'flex' : 'none';
+  document.getElementById('curvesCurrentHeader').textContent = 'Current';
+  document.getElementById('curvesTargetHeader').textContent = tab === 'position' ? 'Target' : 'Target (V)';
+  document.getElementById('curvesLoggedHeader').textContent = 'Logged';
+  buildCurvesTable();
+  updateCurveValues(positionEditor.playhead);
+}
+
+function switchSlot(index) {
+  if (index < 0 || index >= state.slots.length) return;
+  if (state.activeSlotIndex !== index) {
+    if (state.isPreviewing) stopPreview(true);
+    saveSlotEditorState();
+    state.activeSlotIndex = index;
+  }
+  const slot = getActiveSlot();
+  bindEditorsToSlot(slot);
+  switchTab(slot.activeTab, { skipSaveState: true });
+  document.getElementById('chkShowRecorded').checked = slot.showRecorded;
+  document.getElementById('chkDriveRecorded').checked = slot.driveFromRecorded;
+  syncSavedTrajSelection();
+  syncRecordedOverlay();
+  updatePoseTo(positionEditor.playhead);
+  updateHistoryButtons();
+  renderSlotTabs();
+}
+
+const curvesBody = document.getElementById('curvesBody');
+
+function buildCurvesTable() {
+  const traj = getActiveTraj();
+  const editor = getActiveEditor();
+  curvesBody.innerHTML = '';
+  traj.jointNames.forEach((name, j) => {
+    const tr = document.createElement('tr');
+    tr.id = `curve-row-${j}`;
+    if (j === editor.selectedJoint) tr.classList.add('selected');
+    const swatchStyle = `background:${traj.jointColors[j]}`;
+    tr.innerHTML = `
+      <td><input type="checkbox" class="vis-check" data-j="${j}" ${editor.visible[j] ? 'checked' : ''}></td>
+      <td>
+        <span class="color-swatch" style="${swatchStyle}"></span>
+        <span class="joint-name" style="${swatchStyle};padding:1px 5px;border-radius:3px;color:#fff;font-size:11px">${name}</span>
+      </td>
+      <td class="value-cell value-current" id="cur-val-${j}">—</td>
+      <td class="value-cell value-target" id="tgt-val-${j}">—</td>
+      <td class="value-cell value-logged" id="log-val-${j}">—</td>
+    `;
+    tr.addEventListener('click', e => {
+      if (e.target.type === 'checkbox') return;
+      setSelectedJoint(j);
+    });
+    curvesBody.appendChild(tr);
+  });
+
+  document.querySelectorAll('.vis-check').forEach(cb => {
+    cb.addEventListener('change', e => {
+      const j = +e.target.dataset.j;
+      getActiveEditor().setVisible(j, e.target.checked);
+    });
+  });
+}
+
+function formatNumber(value, digits = 3) {
+  return value == null ? '—' : value.toFixed(digits);
+}
+
+function updateCurveValues(t, loggedSample = null) {
+  const traj = getActiveTraj();
+  const slot = getActiveSlot();
+  if (loggedSample == null && getActiveTab() === 'position' && slot.logData) {
+    loggedSample = interpolateLog(t);
+  }
+  const currentValues = getActiveTab() === 'position'
+    ? state.currentAngles.slice(0, traj.jointCount)
+    : new Array(traj.jointCount).fill(null);
+  const loggedValues = getActiveTab() === 'position' && loggedSample
+    ? loggedSample.pose.slice(0, traj.jointCount)
+    : new Array(traj.jointCount).fill(null);
+  traj.jointNames.forEach((_, j) => {
+    const curEl = document.getElementById(`cur-val-${j}`);
+    const tgtEl = document.getElementById(`tgt-val-${j}`);
+    const logEl = document.getElementById(`log-val-${j}`);
+    if (curEl) curEl.textContent = formatNumber(currentValues[j]);
+    if (tgtEl) tgtEl.textContent = formatNumber(traj.getValueAt(j, t));
+    if (logEl) logEl.textContent = formatNumber(loggedValues[j]);
+  });
+}
+
+function sampleToPose(s) {
+  return [
+    s.meas_shoulder,
+    s.meas_spine,
+    s.meas_hip,
+    s.meas_arm_l - Math.PI / 2,
+    s.meas_arm_r - Math.PI / 2,
+  ];
+}
+
+function normaliseLogSamples(samples) {
+  if (!samples || samples.length === 0) return [];
+  const traj0 = Number.isFinite(samples[0].traj_t) ? samples[0].traj_t : null;
+  const frame0 = Number.isFinite(samples[0].replay_frame) ? samples[0].replay_frame : null;
+  const t0 = Number.isFinite(samples[0].t_s) ? samples[0].t_s : 0;
+  return samples.map(s => {
+    let plotT = 0;
+    if (traj0 !== null && Number.isFinite(s.traj_t)) {
+      plotT = s.traj_t - traj0;
+    } else if (frame0 !== null && Number.isFinite(s.replay_frame)) {
+      plotT = (s.replay_frame - frame0) / SplineTrajectoryModel.SAMPLE_RATE;
+    } else if (Number.isFinite(s.t_s)) {
+      plotT = s.t_s - t0;
+    }
+    return { ...s, plot_t: Math.max(0, plotT) };
+  });
+}
+
+function interpolateLog(t, slot = getActiveSlot()) {
+  const log = slot.logData;
+  if (!log || log.length === 0) return null;
+  if (t <= log[0].plot_t) return { pose: sampleToPose(log[0]), imu_quat: log[0].imu_quat, imu_rpy_deg: log[0].imu_rpy_deg };
+  if (t >= log[log.length - 1].plot_t) {
+    const s = log[log.length - 1];
+    return { pose: sampleToPose(s), imu_quat: s.imu_quat, imu_rpy_deg: s.imu_rpy_deg };
+  }
+  let lo = 0;
+  let hi = log.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (log[mid].plot_t < t) lo = mid + 1;
+    else hi = mid;
+  }
+  const s1 = log[lo];
+  const s0 = log[Math.max(0, lo - 1)];
+  const dt = Math.max(1e-9, s1.plot_t - s0.plot_t);
+  const alpha = Math.max(0, Math.min(1, (t - s0.plot_t) / dt));
+  const p0 = sampleToPose(s0);
+  const p1 = sampleToPose(s1);
+  const imuQuat = (() => {
+    const qa = new THREE.Quaternion(s0.imu_quat[1], s0.imu_quat[2], s0.imu_quat[3], s0.imu_quat[0]).normalize();
+    const qb = new THREE.Quaternion(s1.imu_quat[1], s1.imu_quat[2], s1.imu_quat[3], s1.imu_quat[0]).normalize();
+    qa.slerp(qb, alpha);
+    return [qa.w, qa.x, qa.y, qa.z];
+  })();
+  return {
+    pose: p0.map((v, i) => v * (1 - alpha) + p1[i] * alpha),
+    imu_quat: imuQuat,
+    imu_rpy_deg: s0.imu_rpy_deg.map((v, i) => v * (1 - alpha) + s1.imu_rpy_deg[i] * alpha),
+  };
+}
+
+function quatToRpy(quat) {
+  const [qw, qx, qy, qz] = normalizeQuat(quat);
+  const sinr = 2 * (qw * qx + qy * qz);
+  const cosr = 1 - 2 * (qx * qx + qy * qy);
+  const roll = Math.atan2(sinr, cosr);
+  const sinp = 2 * (qw * qy - qz * qx);
+  const pitch = Math.asin(Math.max(-1, Math.min(1, sinp)));
+  const siny = 2 * (qw * qz + qx * qy);
+  const cosy = 1 - 2 * (qy * qy + qz * qz);
+  const yaw = Math.atan2(siny, cosy);
+  const toDeg = 180 / Math.PI;
+  return [roll * toDeg, pitch * toDeg, yaw * toDeg];
+}
+
+function quatToProjectedGravity(quat) {
+  if (!Array.isArray(quat) || quat.length !== 4) return null;
+  const [w, x, y, z] = normalizeQuat(quat);
+  const r20 = 2 * (x * z - y * w);
+  const r21 = 2 * (y * z + x * w);
+  const r22 = 1 - 2 * (x * x + y * y);
+  return [-r20, -r21, -r22];
+}
+
+function formatScalar(value) {
+  if (!Number.isFinite(value)) return '—';
+  return value.toFixed(2);
+}
+
+function formatYaw(quat) {
+  if (!Array.isArray(quat) || quat.length !== 4) return '—';
+  return `${quatToRpy(quat)[2].toFixed(1)}°`;
+}
+
+function sampleReferenceImu(t, slot = getActiveSlot()) {
+  const samples = slot.referenceImu?.samples;
+  if (!samples || samples.length === 0) return null;
+  const duration = slot.positionTraj.duration;
+  const u = duration > 1e-9 ? Math.max(0, Math.min(1, t / duration)) : 0;
+  if (u <= samples[0].u) return { quat: samples[0].quat };
+  if (u >= samples[samples.length - 1].u) return { quat: samples[samples.length - 1].quat };
+  let lo = 0;
+  let hi = samples.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (samples[mid].u < u) lo = mid + 1;
+    else hi = mid;
+  }
+  const s1 = samples[lo];
+  const s0 = samples[Math.max(0, lo - 1)];
+  const du = Math.max(1e-9, s1.u - s0.u);
+  const alpha = Math.max(0, Math.min(1, (u - s0.u) / du));
+  const qa = new THREE.Quaternion(s0.quat[1], s0.quat[2], s0.quat[3], s0.quat[0]).normalize();
+  const qb = new THREE.Quaternion(s1.quat[1], s1.quat[2], s1.quat[3], s1.quat[0]).normalize();
+  qa.slerp(qb, alpha);
+  return { quat: [qa.w, qa.x, qa.y, qa.z] };
+}
+
+function sampleReferenceImuQuat(referenceImu, duration, t) {
+  const samples = referenceImu?.samples;
+  if (!samples || samples.length === 0) return [1, 0, 0, 0];
+  const u = duration > 1e-9 ? Math.max(0, Math.min(1, t / duration)) : 0;
+  if (u <= samples[0].u) return normalizeQuat(samples[0].quat);
+  if (u >= samples[samples.length - 1].u) return normalizeQuat(samples[samples.length - 1].quat);
+  let lo = 0;
+  let hi = samples.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (samples[mid].u < u) lo = mid + 1;
+    else hi = mid;
+  }
+  const s1 = samples[lo];
+  const s0 = samples[Math.max(0, lo - 1)];
+  const du = Math.max(1e-9, s1.u - s0.u);
+  const alpha = Math.max(0, Math.min(1, (u - s0.u) / du));
+  const qa = new THREE.Quaternion(s0.quat[1], s0.quat[2], s0.quat[3], s0.quat[0]).normalize();
+  const qb = new THREE.Quaternion(s1.quat[1], s1.quat[2], s1.quat[3], s1.quat[0]).normalize();
+  qa.slerp(qb, alpha);
+  return [qa.w, qa.x, qa.y, qa.z];
+}
+
+function remapReferenceImu(referenceImu, oldDuration, durationDelta, mode) {
+  if (!referenceImu?.samples?.length || !Number.isFinite(durationDelta) || durationDelta === 0) return referenceImu;
+  const newDuration = Math.max(0.05, oldDuration + durationDelta);
+  const oldTimes = referenceImu.samples.map(sample => ({
+    t: Math.max(0, Math.min(oldDuration, (Number(sample?.u) || 0) * oldDuration)),
+    quat: normalizeQuat(sample?.quat),
+  }));
+  const out = [];
+
+  if (mode === 'prepend') {
+    if (durationDelta > 0) {
+      out.push({ t: 0, quat: sampleReferenceImuQuat(referenceImu, oldDuration, 0) });
+      oldTimes.forEach(sample => out.push({ t: sample.t + durationDelta, quat: sample.quat }));
+    } else {
+      const cut = oldDuration - newDuration;
+      out.push({ t: 0, quat: sampleReferenceImuQuat(referenceImu, oldDuration, cut) });
+      oldTimes
+        .filter(sample => sample.t > cut)
+        .forEach(sample => out.push({ t: sample.t - cut, quat: sample.quat }));
+    }
+  } else if (durationDelta > 0) {
+    oldTimes.forEach(sample => out.push(sample));
+    out.push({ t: newDuration, quat: sampleReferenceImuQuat(referenceImu, oldDuration, oldDuration) });
+  } else {
+    oldTimes
+      .filter(sample => sample.t < newDuration)
+      .forEach(sample => out.push(sample));
+    out.push({ t: newDuration, quat: sampleReferenceImuQuat(referenceImu, oldDuration, newDuration) });
+  }
+
+  return normaliseReferenceImu({
+    samples: out.map(sample => ({
+      u: newDuration > 1e-9 ? sample.t / newDuration : 0,
+      quat: sample.quat,
+    })),
+  });
+}
+
+function setImuDisplay(targetQuat, loggedQuat) {
+  const currentQuat = state.imuQuat;
+  const currentGravity = quatToProjectedGravity(currentQuat);
+  const targetGravity = quatToProjectedGravity(targetQuat);
+  const loggedGravity = quatToProjectedGravity(loggedQuat);
+  document.getElementById('imuCurGravX').textContent = formatScalar(currentGravity?.[0]);
+  document.getElementById('imuCurGravY').textContent = formatScalar(currentGravity?.[1]);
+  document.getElementById('imuCurGravZ').textContent = formatScalar(currentGravity?.[2]);
+  document.getElementById('imuTgtGravX').textContent = formatScalar(targetGravity?.[0]);
+  document.getElementById('imuTgtGravY').textContent = formatScalar(targetGravity?.[1]);
+  document.getElementById('imuTgtGravZ').textContent = formatScalar(targetGravity?.[2]);
+  document.getElementById('imuLogGravX').textContent = formatScalar(loggedGravity?.[0]);
+  document.getElementById('imuLogGravY').textContent = formatScalar(loggedGravity?.[1]);
+  document.getElementById('imuLogGravZ').textContent = formatScalar(loggedGravity?.[2]);
+  document.getElementById('imuCurYaw').textContent = formatYaw(currentQuat);
+  document.getElementById('imuTgtYaw').textContent = formatYaw(targetQuat);
+  document.getElementById('imuLogYaw').textContent = formatYaw(loggedQuat);
+}
+
+function setKpDisplay(kp) {
+  const [shoulder, spine, hip] = Array.isArray(kp) && kp.length === 3
+    ? kp.map(v => Number.isFinite(v) ? v : 0)
+    : [0, 0, 0];
+  document.getElementById('imuKpShoulder').textContent = shoulder.toFixed(2);
+  document.getElementById('imuKpSpine').textContent = spine.toFixed(2);
+  document.getElementById('imuKpHip').textContent = hip.toFixed(2);
+}
+
+function setKdDisplay(kd) {
+  const [shoulder, spine, hip] = Array.isArray(kd) && kd.length === 3
+    ? kd.map(v => Number.isFinite(v) ? v : 0)
+    : [0, 0, 0];
+  document.getElementById('imuKdShoulder').textContent = shoulder.toFixed(2);
+  document.getElementById('imuKdSpine').textContent = spine.toFixed(2);
+  document.getElementById('imuKdHip').textContent = hip.toFixed(2);
+}
+
+function updatePoseTo(t) {
+  const slot = getActiveSlot();
+  positionEditor.setPlayhead(t);
+  ffEditor.setPlayhead(t);
+  const targetPose = slot.positionTraj.getPoseAt(t);
+  const targetImu = sampleReferenceImu(t, slot)?.quat ?? [1, 0, 0, 0];
+  const loggedSample = slot.logData ? interpolateLog(t, slot) : null;
+
+  viewer.setReferencePose(targetPose);
+  viewer.setReferenceImuQuat(targetImu);
+  viewer.setCurrentPose(state.currentAngles);
+  viewer.setCurrentImuQuat(state.imuQuat);
+  viewer.setCurrentVisible(state.showCurrentRobot);
+
+  if (slot.showRecorded && loggedSample) {
+    viewer.setLoggedPose(loggedSample.pose);
+    viewer.setLoggedImuQuat(loggedSample.imu_quat);
+  } else {
+    viewer.hideLogged();
+    viewer.setLoggedImuQuat([1, 0, 0, 0]);
+  }
+
+  updateCurveValues(t, loggedSample);
+  setImuDisplay(targetImu, loggedSample?.imu_quat ?? null);
+}
+
+function renderConnectionStatus() {
+  const lbl = document.getElementById('connIndicator');
+  if (!state.bridgeConnected) {
+    lbl.innerHTML = `<span class="status-dot" id="connDot"></span>USB disconnected`;
+    return;
+  }
+  if (!state.robotConnected) {
+    lbl.innerHTML = `<span class="status-dot" id="connDot"></span>Robot disconnected`;
+    return;
+  }
+  const rtt = Number.isFinite(state.robotLatencyMs) ? state.robotLatencyMs.toFixed(1) + 'ms' : '—';
+  lbl.innerHTML = `<span class="status-dot connected" id="connDot"></span>Robot connected: ${rtt}`;
+}
+
+function appendTerminal(text) {
+  const out = document.getElementById('terminal-output');
+  out.textContent += text.trim() + '\n';
+  if (state.logAutoscroll) out.scrollTop = out.scrollHeight;
+}
+
+function syncRecordedOverlay() {
+  const slot = getActiveSlot();
+  positionEditor.setLogData(slot.showRecorded ? slot.logData : null);
+}
+
+comms.on('connected', () => {
+  state.bridgeConnected = true;
+  btnConnect.textContent = 'Disconnect USB';
+  renderConnectionStatus();
+  renderJoystickUi();
+  appendTerminal('[USB bridge connected]');
+});
+comms.on('disconnected', () => {
+  state.bridgeConnected = false;
+  btnConnect.textContent = 'Connect USB';
+  state.robotConnected = false;
+  state.robotMode = 'idle';
+  clearAllSlotCaches();
+  renderConnectionStatus();
+  renderJoystickUi();
+  appendTerminal('[USB bridge disconnected]');
+});
+comms.on('latency', rtt => {
+  state.robotLatencyMs = Number.isFinite(rtt) ? Number(rtt) : state.robotLatencyMs;
+  renderConnectionStatus();
+});
+comms.on('robot_status', msg => {
+  const wasConnected = state.robotConnected;
+  state.robotConnected = !!msg.connected;
+  state.robotLatencyMs = Number.isFinite(msg.rtt_ms) ? Number(msg.rtt_ms) : null;
+  if (!state.robotConnected) {
+    state.robotMode = 'idle';
+    state.motorKp = [0, 0, 0];
+    state.motorKd = [0, 0, 0];
+    setKpDisplay(state.motorKp);
+    setKdDisplay(state.motorKd);
+    clearAllSlotCaches();
+  } else if (!wasConnected) {
+    handleRobotReconnect();
+  }
+  renderConnectionStatus();
+  renderJoystickUi();
+});
+comms.on('telemetry', msg => {
+  state.currentAngles = [
+    msg.shoulder,
+    msg.spine,
+    msg.hip,
+    msg.arm_l - Math.PI / 2,
+    msg.arm_r - Math.PI / 2,
+  ];
+  if (state.joystickMode) renderJoystickUi();
+  state.imuQuat = msg.imu ?? [1, 0, 0, 0];
+  state.imuRpyDeg = msg.imu_rpy ?? quatToRpy(state.imuQuat);
+  state.busVoltages = msg.bus ?? [0, 0, 0];
+  state.robotMode = msg.mode ?? state.robotMode;
+  if (state.joystickActionSlotIndex !== null) {
+    if (state.robotMode === 'run') state.joystickActionSeenRun = true;
+    else if (state.joystickActionSeenRun) finishJoystickActionRun();
+  }
+  const minV = Math.min(...state.busVoltages).toFixed(1);
+  document.getElementById('voltIndicator').innerHTML = `<span class="status-dot voltage"></span>Bus: ${minV}V`;
+  updatePoseTo(positionEditor.playhead);
+});
+comms.on('kp_update', msg => {
+  const kp = Array.isArray(msg.motor_kp) ? msg.motor_kp : [0, 0, 0];
+  state.motorKp = kp;
+  setKpDisplay(state.motorKp);
+});
+comms.on('kd_update', msg => {
+  const kd = Array.isArray(msg.motor_kd) ? msg.motor_kd : [0, 0, 0];
+  state.motorKd = kd;
+  setKdDisplay(state.motorKd);
+});
+comms.on('log_data', msg => {
+  const slotIndex = Number.isInteger(msg.run_meta?.slot_index) ? msg.run_meta.slot_index : state.activeSlotIndex;
+  const slot = getSlot(slotIndex);
+  slot.logData = normaliseLogSamples(msg.samples ?? []);
+  slot.showRecorded = true;
+  appendTerminal(`[${slot.label} run data captured: ${slot.logData.length} samples]`);
+  if (slotIndex === state.activeSlotIndex) {
+    document.getElementById('chkShowRecorded').checked = true;
+    syncRecordedOverlay();
+    updatePoseTo(0);
+  }
+});
+comms.on('reply', msg => {
+  const text = msg.text ?? JSON.stringify(msg);
+  appendTerminal(text);
+});
+
+const btnPreview = document.getElementById('btnPreview');
+
+function startPreview() {
+  if (state.isPreviewing) {
+    stopPreview(true);
+    return;
+  }
+  state.isPreviewing = true;
+  state.previewLastWall = performance.now();
+  btnPreview.textContent = '⏹ Stop';
+  btnPreview.classList.add('previewing');
+
+  function tick() {
+    if (!state.isPreviewing) return;
+    const now = performance.now();
+    const dtWall = (now - state.previewLastWall) / 1000;
+    state.previewLastWall = now;
+    const newT = positionEditor.playhead + dtWall * state.previewSpeed;
+    const duration = getActiveSlot().positionTraj.duration;
+    if (newT >= duration) {
+      updatePoseTo(duration);
+      stopPreview(true);
+      return;
+    }
+    updatePoseTo(newT);
+    if (state.optionHeld && !state.joystickMode && !state.runBusy && !state.runAwaitingRelease) streamLivePose(newT);
+    state.previewRafId = requestAnimationFrame(tick);
+  }
+
+  state.previewRafId = requestAnimationFrame(tick);
+}
+
+function stopPreview(resetToStart = true) {
+  state.isPreviewing = false;
+  if (state.previewRafId) cancelAnimationFrame(state.previewRafId);
+  state.previewRafId = null;
+  btnPreview.textContent = '▶ Preview';
+  btnPreview.classList.remove('previewing');
+  if (resetToStart) updatePoseTo(0);
+}
+
+function streamSlotPose(slotIndex, t) {
+  const slot = getSlot(slotIndex);
+  let pose;
+  if (slot.driveFromRecorded && slot.logData) {
+    pose = interpolateLog(t, slot)?.pose ?? slot.positionTraj.getPoseAt(t);
+  } else {
+    pose = slot.positionTraj.getPoseAt(t);
+  }
+  comms.sendPose(pose, 1);
+}
+
+function streamLivePose(t) {
+  streamSlotPose(state.activeSlotIndex, t);
+}
+
+function startLiveStream() {
+  if (state.joystickMode || state.liveStreamHandle) return;
+  const dt = 1000 / state.liveStreamHz;
+  state.liveStreamHandle = setInterval(() => streamLivePose(positionEditor.playhead), dt);
+}
+
+function stopRunUploadHold(sendStop = false) {
+  if (state.runUploadHoldHandle) {
+    clearInterval(state.runUploadHoldHandle);
+    state.runUploadHoldHandle = null;
+  }
+  if (sendStop) comms.sendRaw('STOP');
+}
+
+function stopLiveStream(sendStop = true) {
+  if (state.liveStreamHandle) clearInterval(state.liveStreamHandle);
+  state.liveStreamHandle = null;
+  if (sendStop) comms.sendRaw('STOP');
+}
+
+function updateLiveIndicator() {
+  const el = document.getElementById('live-indicator');
+  el.classList.remove('armed');
+  if (state.joystickMode) {
+    if (!state.joystickConnected) {
+      el.textContent = 'JOYSTICK - waiting for gamepad';
+    } else if (!state.joystickCalibrated) {
+      el.textContent = 'JOYSTICK - calibrate axes';
+    } else if (state.joystickPendingSlotIndex !== null) {
+      el.classList.add('armed');
+      el.textContent = `JOYSTICK - ${getSlotLabel(state.joystickPendingSlotIndex)} release once / hold loop`;
+    } else if (state.joystickActionSlotIndex !== null) {
+      el.classList.add('armed');
+      const runMode = state.joystickLoopActive ? 'looping' : 'running once';
+      el.textContent = `JOYSTICK - ${getSlotLabel(state.joystickActionSlotIndex)} ${runMode}`;
+    } else {
+      el.classList.add('armed');
+      el.textContent = 'JOYSTICK - position mode';
+    }
+    return;
+  }
+  if (state.runBusy) {
+    el.textContent = state.optionHeld ? 'RUN caching...' : 'RUN cancelling...';
+    return;
+  }
+  if (state.runAwaitingRelease) {
+    if (state.optionHeld) {
+      el.classList.add('armed');
+      el.textContent = 'RUN hold - release Option to idle';
+    } else {
+      el.textContent = 'RUN stopping...';
+    }
+    return;
+  }
+  if (state.optionHeld) {
+    el.classList.add('armed');
+    el.textContent = 'LIVE - Hold Option';
+    return;
+  }
+  el.textContent = 'Hold Option for LIVE';
+}
+
+function releaseRunHold() {
+  if (!state.runAwaitingRelease) return;
+  state.runAwaitingRelease = false;
+  state.runSlotIndex = null;
+  stopRunUploadHold(false);
+  comms.sendRaw('STOP');
+  renderJoystickUi();
+  appendTerminal('[RUN complete: released to idle]');
+}
+
+function buildCombinedFrames(slotIndex = state.activeSlotIndex) {
+  const slot = getSlot(slotIndex);
+  const posFrames = slot.positionTraj.getFrames();
+  const ffFrames = slot.ffTraj.getFrames();
+  const n = Math.min(posFrames.length, ffFrames.length);
+  const out = [];
+  for (let i = 0; i < n; i++) out.push([...posFrames[i], ...ffFrames[i]]);
+  return out;
+}
+
+function markSlotHasTrajectory(slotIndex, hasTrajectory = true) {
+  const slot = getSlot(slotIndex);
+  slot.hasTrajectory = !!hasTrajectory;
+  if (!slot.hasTrajectory) resetSlotCacheState(slot, false);
+}
+
+function markSlotCacheDirty(slotIndex, opts = {}) {
+  const slot = getSlot(slotIndex);
+  markSlotHasTrajectory(slotIndex, opts.hasTrajectory ?? true);
+  slot.cacheVersion += 1;
+  slot.cacheDirty = slot.hasTrajectory;
+  slot.cacheReady = false;
+  slot.cachedFrameCount = 0;
+  clearSlotCacheTimer(slot);
+  renderSlotTabs();
+  if (!slot.hasTrajectory || !state.bridgeConnected || !state.robotConnected) return;
+  const delayMs = opts.immediate ? 0 : (opts.delayMs ?? SLOT_CACHE_DEBOUNCE_MS);
+  slot.cacheTimer = setTimeout(() => {
+    slot.cacheTimer = null;
+    ensureSlotCached(slotIndex, true);
+  }, delayMs);
+}
+
+async function ensureSlotCached(slotIndex, allowUpload) {
+  const slot = getSlot(slotIndex);
+  if (!slot.hasTrajectory) return false;
+  if (!slot.cacheDirty && slot.cacheReady) return true;
+  if (!allowUpload || !state.bridgeConnected || !state.robotConnected) return false;
+  if (slot.cachePromise) return slot.cachePromise;
+
+  const frames = buildCombinedFrames(slotIndex);
+  const version = slot.cacheVersion;
+  slot.cacheUploading = true;
+  renderSlotTabs();
+
+  slot.cachePromise = new Promise(resolve => {
+    let done = false;
+    const onAck = msg => {
+      if (done || msg.slot_index !== slotIndex) return;
+      done = true;
+      comms.off('traj_ack', onAck);
+      clearTimeout(fallback);
+      resolve(msg.ok !== false);
+    };
+    const fallback = setTimeout(() => {
+      if (done) return;
+      done = true;
+      comms.off('traj_ack', onAck);
+      resolve(false);
+    }, 20000);
+    comms.on('traj_ack', onAck);
+    comms.uploadTrajectory(slotIndex, frames);
+  }).then(ok => {
+    if (!ok) {
+      slot.cacheReady = false;
+      return false;
+    }
+    if (version !== slot.cacheVersion) {
+      slot.cacheDirty = true;
+      slot.cacheReady = false;
+      markSlotCacheDirty(slotIndex, { immediate: true });
+      return false;
+    }
+    slot.cacheDirty = false;
+    slot.cacheReady = true;
+    slot.cachedFrameCount = frames.length;
+    return true;
+  }).finally(() => {
+    slot.cacheUploading = false;
+    slot.cachePromise = null;
+    renderSlotTabs();
+  });
+
+  return slot.cachePromise;
+}
+
+function resetSlotRunLog(slotIndex) {
+  const slot = getSlot(slotIndex);
+  slot.logData = null;
+  slot.showRecorded = false;
+  slot.driveFromRecorded = false;
+  if (slotIndex === state.activeSlotIndex) {
+    document.getElementById('chkShowRecorded').checked = false;
+    document.getElementById('chkDriveRecorded').checked = false;
+    syncRecordedOverlay();
+  }
+}
+
+function sendSlotRunCommand(slotIndex, sourceLabel = 'RUN', loop = false) {
+  const slot = getSlot(slotIndex);
+  resetSlotRunLog(slotIndex);
+  comms.sendRun(slotIndex, {
+    run_id: state.nextRunId++,
+    slot_index: slotIndex,
+    slot_label: slot.label,
+  }, loop);
+  appendTerminal(`[${slot.label} ${sourceLabel} sent]`);
+}
+
+function handleRobotReconnect() {
+  state.slots.forEach((slot, index) => {
+    if (slot.hasTrajectory) {
+      slot.cacheReady = false;
+      slot.cacheUploading = false;
+      slot.cacheDirty = true;
+      clearSlotCacheTimer(slot);
+      ensureSlotCached(index, true);
+    } else {
+      resetSlotCacheState(slot, false);
+    }
+  });
+  renderSlotTabs();
+}
+
+function clearAllSlotCaches() {
+  state.slots.forEach(slot => {
+    resetSlotCacheState(slot, slot.hasTrajectory);
+  });
+  renderSlotTabs();
+}
+
+document.addEventListener('keydown', e => {
+  const mod = e.metaKey || e.ctrlKey;
+  if (mod && e.key.toLowerCase() === 'z') {
+    e.preventDefault();
+    if (e.shiftKey) redoHistory();
+    else undoHistory();
+    return;
+  }
+  if (mod && e.key.toLowerCase() === 'y') {
+    e.preventDefault();
+    redoHistory();
+    return;
+  }
+  if (e.key === 'Alt' && !state.optionHeld) {
+    state.optionHeld = true;
+    if (!state.joystickMode && !state.runBusy && !state.runAwaitingRelease) startLiveStream();
+    updateLiveIndicator();
+  }
+});
+
+document.addEventListener('keyup', e => {
+  if (e.key === 'Alt' && state.optionHeld) {
+    state.optionHeld = false;
+    if (state.joystickMode) {
+      updateLiveIndicator();
+      return;
+    }
+    if (state.runBusy) {
+      state.runAbortRequested = true;
+      stopRunUploadHold(true);
+      appendTerminal('[RUN aborted: Option released]');
+    } else if (state.runAwaitingRelease) {
+      releaseRunHold();
+    } else {
+      stopLiveStream(true);
+    }
+    updateLiveIndicator();
+  }
+});
+
+async function startRunForSlot(slotIndex) {
+  if (state.joystickMode) {
+    appendTerminal('[disable joystick mode before RUN]');
+    return;
+  }
+  if (!state.optionHeld) {
+    appendTerminal('[Hold Option to enable RUN]');
+    return;
+  }
+  if (state.runBusy || state.runAwaitingRelease) return;
+
+  const slot = getSlot(slotIndex);
+
+  state.runBusy = true;
+  state.runSlotIndex = slotIndex;
+  state.runAbortRequested = false;
+  renderJoystickUi();
+  updateLiveIndicator();
+  stopLiveStream(false);
+  stopPreview(true);
+
+  const btn = document.getElementById('btnRun');
+  btn.disabled = true;
+  btn.textContent = '... caching ...';
+
+  streamSlotPose(slotIndex, 0);
+  state.runUploadHoldHandle = setInterval(() => streamSlotPose(slotIndex, 0), 100);
+
+  try {
+    appendTerminal(`[${slot.label} caching trajectory...]`);
+    const cacheOk = await ensureSlotCached(slotIndex, true);
+    if (!cacheOk) {
+      appendTerminal(`[${slot.label} RUN cancelled: cache not ready]`);
+      comms.sendRaw('STOP');
+      return;
+    }
+    if (!state.optionHeld || state.runAbortRequested) {
+      appendTerminal(`[${slot.label} RUN cancelled before start]`);
+      comms.sendRaw('STOP');
+      return;
+    }
+
+    stopRunUploadHold(false);
+    sendSlotRunCommand(slotIndex);
+    state.runAwaitingRelease = true;
+    if (slotIndex === state.activeSlotIndex) updatePoseTo(0);
+    renderJoystickUi();
+    updateLiveIndicator();
+    appendTerminal(`[${slot.label} streaming run data...]`);
+  } catch (err) {
+    appendTerminal(`[RUN failed: ${err}]`);
+  } finally {
+    stopRunUploadHold(false);
+    btn.disabled = false;
+    btn.textContent = '▶ RUN';
+    state.runBusy = false;
+    if (!state.runAwaitingRelease) state.runSlotIndex = null;
+    renderJoystickUi();
+    updateLiveIndicator();
+  }
+}
+
+document.getElementById('btnRun').addEventListener('click', async () => {
+  await startRunForSlot(state.activeSlotIndex);
+});
+
+function applyLoadedTrajectory(doc, label = 'loaded', opts = {}) {
+  const slotIndex = Number.isInteger(opts.slotIndex) ? opts.slotIndex : state.activeSlotIndex;
+  const slot = getSlot(slotIndex);
+  const normalised = normaliseTrajectoryDoc(doc);
+  if (opts.recordHistory && slotIndex === state.activeSlotIndex) beginHistoryCapture();
+  loadModel(slot.positionTraj, normalised.positionKeyframes, normalised.duration);
+  loadModel(slot.ffTraj, normalised.feedforwardKeyframesVolts, normalised.duration);
+  slot.referenceImu = normalised.referenceImu;
+  slot.activeTab = normalised.activeTab ?? slot.activeTab;
+  slot.logData = null;
+  slot.showRecorded = false;
+  slot.driveFromRecorded = false;
+  slot.positionViewState = { ...slot.positionViewState, playhead: 0 };
+  slot.ffViewState = { ...slot.ffViewState, playhead: 0 };
+  markSlotHasTrajectory(slotIndex, true);
+  markSlotCacheDirty(slotIndex, { immediate: !!opts.immediateCache });
+  if (slotIndex === state.activeSlotIndex) {
+    document.getElementById('chkShowRecorded').checked = false;
+    document.getElementById('chkDriveRecorded').checked = false;
+    bindEditorsToSlot(slot);
+    switchTab(slot.activeTab, { skipSaveState: true });
+    syncRecordedOverlay();
+    updatePoseTo(0);
+    if (opts.recordHistory) commitHistoryCapture();
+    updateHistoryButtons();
+  }
+  appendTerminal(`[${slot.label} trajectory loaded: ${label}]`);
+}
+
+function restoreSnapshot(snapshot, label) {
+  const slot = getActiveSlot();
+  slot.applyingHistory = true;
+  try {
+    applyLoadedTrajectory(JSON.parse(snapshot), label, { recordHistory: false });
+  } finally {
+    slot.applyingHistory = false;
+    slot.pendingHistory = null;
+    updateHistoryButtons();
+  }
+}
+
+function undoHistory() {
+  const slot = getActiveSlot();
+  if (slot.undoStack.length === 0) return;
+  const current = JSON.stringify(currentDocSnapshotData(slot));
+  const snapshot = slot.undoStack.pop();
+  slot.redoStack.push(current);
+  restoreSnapshot(snapshot, 'undo');
+}
+
+function redoHistory() {
+  const slot = getActiveSlot();
+  if (slot.redoStack.length === 0) return;
+  const current = JSON.stringify(currentDocSnapshotData(slot));
+  const snapshot = slot.redoStack.pop();
+  slot.undoStack.push(current);
+  restoreSnapshot(snapshot, 'redo');
+}
+
+async function loadSavedTrajectory(name, recordHistory = true, slotIndex = state.activeSlotIndex) {
+  try {
+    const data = { trajectory: await TrajectoryFiles.load(name) };
+    const slot = getSlot(slotIndex);
+    slot.selectedSavedName = name;
+    applyLoadedTrajectory(data.trajectory, name, { recordHistory, slotIndex });
+    if (slotIndex === state.activeSlotIndex) syncSavedTrajSelection();
+    return true;
+  } catch (err) {
+    appendTerminal(`[load failed: ${err}]`);
+    return false;
+  }
+}
+
+async function refreshSavedTrajList(selectName = null, autoLoadLatest = false, slotIndex = state.activeSlotIndex) {
+  const sel = document.getElementById('savedTrajSelect');
+  try {
+    const data = await TrajectoryFiles.list();
+    const files = data.files ?? [];
+    const latest = data.latest ?? null;
+    state.savedTrajFiles = files;
+    state.latestSavedTraj = latest;
+    sel.innerHTML = '';
+    if (files.length === 0) {
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = '(saved_traj empty)';
+      sel.appendChild(opt);
+      getSlot(slotIndex).selectedSavedName = '';
+      return;
+    }
+    files.forEach(name => {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      sel.appendChild(opt);
+    });
+    const slot = getSlot(slotIndex);
+    const preferred =
+      (selectName && files.includes(selectName)) ? selectName :
+      (slot.selectedSavedName && files.includes(slot.selectedSavedName)) ? slot.selectedSavedName :
+      (latest && files.includes(latest)) ? latest :
+      files[0];
+    slot.selectedSavedName = preferred;
+    syncSavedTrajSelection();
+    if (autoLoadLatest && preferred) await loadSavedTrajectory(preferred, false, slotIndex);
+  } catch (err) {
+    appendTerminal(`[saved traj list error: ${err}]`);
+  }
+}
+
+document.getElementById('btnRefreshTraj').addEventListener('click', () => refreshSavedTrajList());
+document.getElementById('savedTrajSelect').addEventListener('change', e => {
+  getActiveSlot().selectedSavedName = e.target.value;
+});
+document.getElementById('btnLoadTraj').addEventListener('click', async () => {
+  const name = document.getElementById('savedTrajSelect').value;
+  if (!name) {
+    appendTerminal('[no saved trajectory selected]');
+    return;
+  }
+  await loadSavedTrajectory(name);
+});
+document.getElementById('btnSaveTraj').addEventListener('click', async () => {
+  const defaultName = `traj_${new Date().toISOString().replace(/[:.]/g, '_')}.csv`;
+  const name = prompt('Save trajectory filename', defaultName);
+  if (name == null) return;
+  try {
+    const data = { name: TrajectoryFiles.save(name, currentDocSnapshotData()) };
+    appendTerminal(`[trajectory saved: ${data.name}]`);
+    getActiveSlot().selectedSavedName = data.name;
+    await refreshSavedTrajList(data.name);
+  } catch (err) {
+    appendTerminal(`[save failed: ${err}]`);
+  }
+});
+document.getElementById('btnLoadLocalTraj').addEventListener('click', () => {
+  document.getElementById('inputTrajFile').click();
+});
+document.getElementById('inputTrajFile').addEventListener('change', async e => {
+  const file = e.target.files?.[0];
+  e.target.value = '';
+  if (!file) return;
+  try {
+    const csvText = await file.text();
+    const data = { trajectory: TrajectoryFiles.parse(csvText) };
+    applyLoadedTrajectory(data.trajectory, file.name, { recordHistory: true, slotIndex: state.activeSlotIndex });
+  } catch (err) {
+    appendTerminal(`[local load failed: ${err}]`);
+  }
+});
+document.getElementById('btnSaveLog').addEventListener('click', () => {
+  const slot = getActiveSlot();
+  if (!slot.logData || slot.logData.length === 0) {
+    appendTerminal('[no log data to save]');
+    return;
+  }
+  const keys = Object.keys(slot.logData[0]);
+  const rows = [keys.join(',')];
+  slot.logData.forEach(s => {
+    rows.push(keys.map(k => {
+      const v = s[k];
+      return Array.isArray(v) ? v.join(';') : v;
+    }).join(','));
+  });
+  const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${slot.label.toLowerCase().replace(/\s+/g, '_')}_log_${new Date().toISOString().replace(/[:.]/g,'_')}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  appendTerminal('[CSV saved]');
+});
+
+document.getElementById('inputDuration').addEventListener('change', e => {
+  const slot = getActiveSlot();
+  beginHistoryCapture();
+  const d = Math.max(0.05, Math.min(4, parseFloat(e.target.value) || 0.4));
+  e.target.value = d.toFixed(3);
+  slot.positionTraj.setDuration(d);
+  slot.ffTraj.setDuration(d);
+  positionEditor.setDuration(d);
+  ffEditor.setDuration(d);
+  updatePoseTo(Math.min(positionEditor.playhead, d));
+  commitHistoryCapture();
+});
+
+function applyTrajectoryPad(mode) {
+  const slot = getActiveSlot();
+  const input = document.getElementById('inputPadTime');
+  const dt = parseFloat(input.value) || 0;
+  input.value = dt.toFixed(3);
+  if (dt === 0) return;
+  if (dt > 0 && (!slot.positionTraj.canPadTime() || !slot.ffTraj.canPadTime())) {
+    appendTerminal('[pad failed: max keyframes reached]');
+    return;
+  }
+  beginHistoryCapture();
+  const oldDuration = slot.positionTraj.duration;
+  const ok = mode === 'prepend'
+    ? (dt > 0
+      ? slot.positionTraj.prependTime(dt) && slot.ffTraj.prependTime(dt)
+      : slot.positionTraj.trimStart(-dt) && slot.ffTraj.trimStart(-dt))
+    : (dt > 0
+      ? slot.positionTraj.appendTime(dt) && slot.ffTraj.appendTime(dt)
+      : slot.positionTraj.trimEnd(-dt) && slot.ffTraj.trimEnd(-dt));
+  if (!ok) {
+    appendTerminal('[pad failed]');
+    commitHistoryCapture();
+    return;
+  }
+  const durationDelta = slot.positionTraj.duration - oldDuration;
+  slot.referenceImu = remapReferenceImu(slot.referenceImu, oldDuration, durationDelta, mode);
+  document.getElementById('inputDuration').value = slot.positionTraj.duration.toFixed(3);
+  positionEditor.setDuration(slot.positionTraj.duration);
+  ffEditor.setDuration(slot.ffTraj.duration);
+  if (mode === 'prepend') {
+    positionEditor.setPlayhead(Math.max(0, Math.min(positionEditor.playhead + durationDelta, slot.positionTraj.duration)));
+    ffEditor.setPlayhead(Math.max(0, Math.min(ffEditor.playhead + durationDelta, slot.ffTraj.duration)));
+  } else {
+    positionEditor.setPlayhead(Math.min(positionEditor.playhead, slot.positionTraj.duration));
+    ffEditor.setPlayhead(Math.min(ffEditor.playhead, slot.ffTraj.duration));
+  }
+  updatePoseTo(positionEditor.playhead);
+  commitHistoryCapture();
+}
+
+document.getElementById('btnPrependTime').addEventListener('click', () => {
+  applyTrajectoryPad('prepend');
+});
+document.getElementById('btnAppendTime').addEventListener('click', () => {
+  applyTrajectoryPad('append');
+});
+document.getElementById('inputPreviewSpeed').addEventListener('change', e => {
+  state.previewSpeed = Math.max(0.01, Math.min(2, parseFloat(e.target.value) || 0.1));
+  e.target.value = state.previewSpeed;
+});
+document.getElementById('chkShowRecorded').addEventListener('change', e => {
+  const slot = getActiveSlot();
+  slot.showRecorded = e.target.checked;
+  if (!slot.showRecorded) viewer.hideLogged();
+  syncRecordedOverlay();
+  updatePoseTo(positionEditor.playhead);
+});
+document.getElementById('chkImuSnap').addEventListener('change', e => {
+  state.showCurrentRobot = e.target.checked;
+  viewer.setCurrentVisible(state.showCurrentRobot);
+  updatePoseTo(positionEditor.playhead);
+});
+document.getElementById('chkDriveRecorded').addEventListener('change', e => {
+  getActiveSlot().driveFromRecorded = e.target.checked;
+});
+document.getElementById('chkLogAutoscroll').addEventListener('change', e => {
+  state.logAutoscroll = e.target.checked;
+  if (state.logAutoscroll) {
+    const out = document.getElementById('terminal-output');
+    out.scrollTop = out.scrollHeight;
+  }
+});
+document.getElementById('terminal-send').addEventListener('click', () => {
+  const inp = document.getElementById('terminal-input');
+  const cmd = inp.value.trim();
+  if (!cmd) return;
+  const kdMatch = /^KD\s+\S+\s+(\S+)\s*$/i.exec(cmd);
+  if (kdMatch && Number(kdMatch[1]) > 0.1) {
+    appendTerminal('[KD blocked: maximum is 0.10; higher values can cause vibration]');
+    return;
+  }
+  comms.sendRaw(cmd);
+  appendTerminal('> ' + cmd);
+  inp.value = '';
+});
+document.getElementById('terminal-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('terminal-send').click();
+});
+document.getElementById('tabPosition').addEventListener('click', () => switchTab('position'));
+document.getElementById('tabFeedforward').addEventListener('click', () => switchTab('feedforward'));
+document.getElementById('btnFfScaleUp').addEventListener('click', () => {
+  beginHistoryCapture();
+  getActiveSlot().ffTraj.scaleAll(1.05);
+  ffEditor.refresh();
+  updateCurveValues(ffEditor.playhead);
+  commitHistoryCapture();
+});
+document.getElementById('btnFfScaleDown').addEventListener('click', () => {
+  beginHistoryCapture();
+  getActiveSlot().ffTraj.scaleAll(0.95);
+  ffEditor.refresh();
+  updateCurveValues(ffEditor.playhead);
+  commitHistoryCapture();
+});
+document.getElementById('btnUndo').addEventListener('click', undoHistory);
+document.getElementById('btnRedo').addEventListener('click', redoHistory);
+btnPreview.addEventListener('click', startPreview);
+
+document.getElementById('btnJoystickMode').addEventListener('click', () => {
+  setJoystickMode(!state.joystickMode);
+});
+
+window.addEventListener('gamepadconnected', e => {
+  if (state.hidPad?.opened) return;
+  state.joystickGamepadIndex = e.gamepad.index;
+  appendTerminal(`[gamepad connected: ${e.gamepad.id} mapping=${e.gamepad.mapping || 'none'}]`);
+  renderJoystickUi();
+  updateLiveIndicator();
+});
+
+window.addEventListener('gamepaddisconnected', e => {
+  if (state.joystickGamepadIndex === e.gamepad.index) state.joystickGamepadIndex = null;
+  appendTerminal(`[gamepad disconnected: ${e.gamepad.id}]`);
+  renderJoystickUi();
+  updateLiveIndicator();
+});
+
+if (navigator.hid) {
+  navigator.hid.addEventListener('disconnect', e => {
+    if (state.hidPad === e.device) appendTerminal(`[HID gamepad disconnected: ${e.device.productName || 'unknown device'}]`);
+    clearHidGamepad(e.device);
+  });
+  navigator.hid.addEventListener('connect', e => {
+    if (isHidGamepadDevice(e.device)) connectHidGamepad(false);
+  });
+  connectHidGamepad(false);
+}
+
+window.addEventListener('blur', () => {
+  if (state.hidBusy) return;
+  if (state.joystickMode) setJoystickMode(false, '[joystick mode disabled: window lost focus]');
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && state.joystickMode) {
+    setJoystickMode(false, '[joystick mode disabled: tab hidden]');
+  }
+});
+
+window.addEventListener('beforeunload', () => {
+  if (state.joystickMode) comms.sendRaw('STOP');
+});
+
+renderConnectionStatus();
+renderJoystickUi();
+updateLiveIndicator();
+renderSlotTabs();
+switchSlot(0);
+refreshSavedTrajList(null, true, 0);
+updateHistoryButtons();
+
+window.state = state;
+window.editor = positionEditor;
+window.ffEditor = ffEditor;
+window.viewer = viewer;
+window.comms = comms;
+window.updatePoseTo = updatePoseTo;
+window.setSelectedJoint = setSelectedJoint;
+window.startRunForSlot = startRunForSlot;
+window.getActiveSlot = getActiveSlot;
+</script>
+</body>
+</html>

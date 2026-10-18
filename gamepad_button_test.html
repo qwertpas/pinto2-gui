@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Gamepad Button Test</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body {
+      background: #111827;
+      color: #e5e7eb;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0;
+      padding: 16px;
+    }
+    h1 {
+      font-size: 18px;
+      margin-bottom: 8px;
+    }
+    #pad-info {
+      margin-bottom: 12px;
+      font-size: 14px;
+      color: #9ca3af;
+    }
+    #buttons {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+      gap: 6px;
+      margin-bottom: 16px;
+    }
+    .btn {
+      padding: 6px 4px;
+      border-radius: 6px;
+      border: 1px solid #374151;
+      background: #111827;
+      text-align: center;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    .btn.active {
+      background: #b45309;
+      border-color: #fbbf24;
+      color: #111827;
+      font-weight: 600;
+    }
+    .btn span {
+      display: block;
+    }
+    .btn span.value {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 11px;
+      color: #d1d5db;
+    }
+    #log {
+      background: #020617;
+      border-radius: 6px;
+      border: 1px solid #111827;
+      padding: 8px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 11px;
+      height: 220px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+    #axes {
+      margin-top: 8px;
+      font-size: 12px;
+      color: #9ca3af;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    #axes div {
+      margin-bottom: 2px;
+    }
+    .hint {
+      margin-top: 8px;
+      font-size: 11px;
+      color: #6b7280;
+    }
+  </style>
+</head>
+<body>
+  <h1>Gamepad Button / Axis Test</h1>
+  <div id="pad-info">Waiting for gamepad connection…</div>
+
+  <div id="buttons"></div>
+
+  <div id="axes"></div>
+
+  <div class="hint">
+    Press any button or move sticks. This page will log button index, edge events, and raw values.
+    Use this to confirm which physical button corresponds to index 15.
+  </div>
+
+  <h2 style="margin-top: 10px; font-size: 14px;">Event log</h2>
+  <div id="log"></div>
+
+  <script>
+    const buttonsEl = document.getElementById('buttons');
+    const axesEl = document.getElementById('axes');
+    const padInfoEl = document.getElementById('pad-info');
+    const logEl = document.getElementById('log');
+
+    let padIndex = null;
+    let prevButtons = [];
+
+    function appendLog(line) {
+      const ts = new Date().toISOString().split('T')[1].replace('Z', '');
+      logEl.textContent += '[' + ts + '] ' + line + '\n';
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function getFirstConnectedPad() {
+      if (!navigator.getGamepads) return null;
+      const pads = Array.from(navigator.getGamepads()).filter(Boolean);
+      if (padIndex != null) {
+        const preferred = pads.find(p => p.index === padIndex && p.connected);
+        if (preferred) return preferred;
+      }
+      return pads.find(p => p.connected) || null;
+    }
+
+    function ensureButtonsUi(count) {
+      if (buttonsEl.childElementCount === count) return;
+      buttonsEl.innerHTML = '';
+      for (let i = 0; i < count; i++) {
+        const div = document.createElement('div');
+        div.className = 'btn';
+        div.dataset.index = String(i);
+        div.innerHTML = '<span>Button ' + i + '</span><span class="value">0.00</span>';
+        buttonsEl.appendChild(div);
+      }
+    }
+
+    function updateUi() {
+      const pad = getFirstConnectedPad();
+      if (!pad) {
+        padInfoEl.textContent = 'No gamepad detected. Plug in or wake controller.';
+        return;
+      }
+
+      if (padIndex !== pad.index) {
+        padIndex = pad.index;
+        prevButtons = pad.buttons.map(b => !!b.pressed);
+        appendLog('Using gamepad index ' + pad.index + ': ' + pad.id);
+      }
+
+      padInfoEl.textContent = 'Gamepad ' + pad.index + ': ' + pad.id +
+        ' — ' + pad.buttons.length + ' buttons, ' + pad.axes.length + ' axes';
+
+      ensureButtonsUi(pad.buttons.length);
+
+      // Buttons
+      for (let i = 0; i < pad.buttons.length; i++) {
+        const b = pad.buttons[i];
+        const val = Number.isFinite(b.value) ? b.value : (b.pressed ? 1 : 0);
+        const pressed = val > 0.5;
+        const prev = prevButtons[i] || false;
+        const div = buttonsEl.querySelector('[data-index="' + i + '"]');
+        if (div) {
+          div.classList.toggle('active', pressed);
+          const valueSpan = div.querySelector('.value');
+          if (valueSpan) valueSpan.textContent = val.toFixed(2);
+        }
+        if (pressed && !prev) {
+          appendLog('Button ' + i + ' DOWN (value=' + val.toFixed(2) + ')');
+        } else if (!pressed && prev) {
+          appendLog('Button ' + i + ' UP');
+        }
+        prevButtons[i] = pressed;
+      }
+
+      // Axes
+      axesEl.innerHTML = '';
+      pad.axes.forEach((v, i) => {
+        const div = document.createElement('div');
+        div.textContent = 'Axis ' + i + ': ' + (Number.isFinite(v) ? v.toFixed(3) : 'NaN');
+        axesEl.appendChild(div);
+      });
+
+      requestAnimationFrame(updateUi);
+    }
+
+    window.addEventListener('gamepadconnected', (e) => {
+      padIndex = e.gamepad.index;
+      prevButtons = e.gamepad.buttons.map(b => !!b.pressed);
+      padInfoEl.textContent = 'Gamepad connected: ' + e.gamepad.id + ' (index ' + e.gamepad.index + ')';
+      appendLog('gamepadconnected index=' + e.gamepad.index + ' id=' + e.gamepad.id);
+      requestAnimationFrame(updateUi);
+    });
+
+    window.addEventListener('gamepaddisconnected', (e) => {
+      appendLog('gamepaddisconnected index=' + e.gamepad.index + ' id=' + e.gamepad.id);
+      if (padIndex === e.gamepad.index) {
+        padIndex = null;
+        prevButtons = [];
+        padInfoEl.textContent = 'Gamepad disconnected. Waiting for connection…';
+      }
+    });
+
+    // In case the gamepad is already connected before page load
+    window.addEventListener('load', () => {
+      const pad = getFirstConnectedPad();
+      if (pad) {
+        padIndex = pad.index;
+        prevButtons = pad.buttons.map(b => !!b.pressed);
+        appendLog('Found already-connected gamepad index ' + pad.index + ': ' + pad.id);
+        requestAnimationFrame(updateUi);
+      }
+    });
+  </script>
+</body>
+</html>
+
