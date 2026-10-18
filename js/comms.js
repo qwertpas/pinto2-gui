@@ -56,6 +56,7 @@ window.Comms = class Comms {
     this._rttMs = null;
     this._lastRx = 0;
     this._generation = 0;
+    this._telemetryHz = 100;
   }
   on(event, fn) { (this._callbacks[event] ??= []).push(fn); return this; }
   off(event, fn) { this._callbacks[event] = (this._callbacks[event] ?? []).filter(f => f !== fn); }
@@ -194,9 +195,21 @@ window.Comms = class Comms {
     return result;
   }
   _telemetry(hz) {
+    this._telemetryHz = hz;
     const bytes = new Uint8Array(4), view = new DataView(bytes.buffer);
     view.setUint16(0, hz, true); view.setUint16(2, 364, true);
     return this._write(5, bytes);
+  }
+  async _paused(body) {
+    await this._write(6, new Uint8Array());
+    await new Promise(resolve => setTimeout(resolve, 50));
+    try { return await body(); }
+    finally {
+      if (!this._closing) {
+        await new Promise(resolve => setTimeout(resolve, 50));
+        await this._telemetry(this._telemetryHz);
+      }
+    }
   }
   async _ping() {
     const start = performance.now();
@@ -262,8 +275,7 @@ window.Comms = class Comms {
             frames.some(f => f.length !== 8 || !f.every(Number.isFinite))) throw new Error('Invalid trajectory (maximum 2000 frames)');
         const bytes = new Uint8Array(frames.length * 32), view = new DataView(bytes.buffer);
         frames.forEach((f, i) => f.forEach((v, j) => view.setFloat32(i * 32 + j * 4, v + (j === 1 || j === 2 ? Math.PI / 2 : 0), true)));
-        await this._write(6, new Uint8Array());
-        try {
+        await this._paused(async () => {
           await this._app(15, { slot, value: frames.length });
           for (let i = 0; i < frames.length; i += 16) {
             if (generation !== this._generation) throw new Error('Upload cancelled');
@@ -271,7 +283,7 @@ window.Comms = class Comms {
           }
           if (generation !== this._generation) throw new Error('Upload cancelled');
           await this._app(17, { slot });
-        } finally { if (!this._closing) await this._telemetry(100); }
+        });
         this._emit('traj_ack', { ok: true, slot_index: slot, frames: frames.length });
       } catch (e) { this._emit('traj_ack', { ok: false, slot_index: slot, msg: e.message }); throw e; }
     });
@@ -282,6 +294,8 @@ window.Comms = class Comms {
       if (!Number.isInteger(slot) || slot < 0 || slot > 7) throw new Error('RUN slot must be 0..7');
       this._runMeta = meta;
       try {
+        await this._write(6, new Uint8Array());
+        await new Promise(resolve => setTimeout(resolve, 10));
         await this._telemetry(500);
         await this._app(loop ? 9 : 8, { slot });
         this._emit('reply', { text: `OK ${loop ? 'RUN_LOOP' : 'RUN'} ${slot}` });
@@ -294,20 +308,22 @@ window.Comms = class Comms {
     if (stop) { this._pose = null; this._queue = []; this._generation++; }
     if (command === 'RUN' || command === 'RUN_LOOP') { this.sendRun(Number(parts[1] ?? 0), null, command === 'RUN_LOOP'); return; }
     this._enqueue(async () => {
-      if (command === 'PING') { const time = await this._ping(); this._emit('reply', { text: `PONG ${time}` }); return; }
-      if (command === 'STATUS') { await this._status(true); return; }
       if (command === 'P' && parts.length === 7) {
         await this._app(14, { payload: this._poseBytes(parts.slice(1, 6).map(Number), Number(parts[6])) }, false); return;
       }
-      if (command === 'KP' || command === 'KD') {
-        const joint = ['SHOULDER', 'SPINE', 'HIP'].indexOf(parts[1]), value = Number(parts[2]);
-        const max = command === 'KP' ? 10 : 0.1;
-        if (parts.length !== 3 || joint < 0 || !Number.isFinite(value) || value < 0 || value > max) throw new Error(`${command} requires SHOULDER/SPINE/HIP and 0..${max}`);
-        await this._app(command === 'KP' ? 13 : 20, { slot: joint, value: Math.round(value * 100) });
-        await this._status();
-      } else if (stop) { await this._app(3); await this._telemetry(100); }
-      else throw new Error(`Unsupported command: ${text}`);
-      this._emit('reply', { text: `OK ${text}` });
+      await this._paused(async () => {
+        if (command === 'PING') { const time = await this._ping(); this._emit('reply', { text: `PONG ${time}` }); return; }
+        if (command === 'STATUS') { await this._status(true); return; }
+        if (command === 'KP' || command === 'KD') {
+          const joint = ['SHOULDER', 'SPINE', 'HIP'].indexOf(parts[1]), value = Number(parts[2]);
+          const max = command === 'KP' ? 10 : 0.1;
+          if (parts.length !== 3 || joint < 0 || !Number.isFinite(value) || value < 0 || value > max) throw new Error(`${command} requires SHOULDER/SPINE/HIP and 0..${max}`);
+          await this._app(command === 'KP' ? 13 : 20, { slot: joint, value: Math.round(value * 100) });
+          await this._status();
+        } else if (stop) { await this._app(3); this._telemetryHz = 100; }
+        else throw new Error(`Unsupported command: ${text}`);
+        this._emit('reply', { text: `OK ${text}` });
+      });
     }, stop);
   }
   _samples(payload) {
